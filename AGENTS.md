@@ -12,14 +12,17 @@
 
 | 组件 | 版本 | 备注 |
 |---|---|---|
-| JDK | Temurin 21 | `.tooling/jdk-21` |
+| JDK | Temurin 21.0.13 | `.tooling/jdk-21` |
 | Gradle | 9.9.1 | `.tooling/gradle/gradle-9.9.1` |
-| AGP | 9.5.1 | 8.13.2 是退路（配 Gradle 8.14.3） |
-| Kotlin / compose plugin | 2.4.21 | 两者必须同版本 |
+| AGP | 9.5.1 | AGP 9 内置 Kotlin，**不要再加** `org.jetbrains.kotlin.android` |
+| 内置 Kotlin | 2.2.10 | AGP 9.5.1 固定用它，改不了 |
+| Compose 编译器插件 | 2.2.10 | 必须与内置 Kotlin 同版本 |
 | Compose BOM | 2026.09.00 | |
-| compileSdk / targetSdk / minSdk | 36 / 36 / 26 | |
+| compileSdk / targetSdk / minSdk | 37 / 37 / 26 | SDK 目录是 `platforms/android-37.0` |
+| buildTools | 37.0.0 | |
 
-升级任一版本前，先跑一次 `python scripts/build_apk.py` 确认能出包；升完再跑一次。
+这套是 2026-11-17 实测能出包的组合。升级任一版本前，先跑一次 `python scripts/build_apk.py` 确认能出包；升完再跑一次。
+已知死路：AGP 8.13.2 + Gradle 8.14.3 已经不能用了（core-ktx 1.19.1 / compose 1.12.x 硬要求 AGP ≥ 9.1 + compileSdk 37）。
 
 ## 环境事实（本机，2026-11）
 
