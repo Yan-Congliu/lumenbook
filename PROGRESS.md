@@ -264,6 +264,8 @@ CBZ / FB2 验证            scripts/make_test_misc.py 自造样书，桌面全�
 - 已发 **v0.6.3 Release**（https://github.com/Yan-Congliu/lumenbook/releases/tag/v0.6.3），资产 `lumenbook-0.6.3-arm64-v8a.apk`，
   应用内更新的链路这就算真正闭环了。
 - PDF 目录做不了：`PdfRenderer` 不暴露 outline/bookmark 树，要做得引 PDFium 或另写 PDF 解析，先记着。
+- **0.6.5**：漫画封面 —— CBZ 没有元数据，封面取包内按文件名排序最靠前的图片（>6MB 放弃），
+  `BookImporter.sniffCbz()`；单测 `CbzCoverTest`（4 个用例，含损坏包不抛异常）。
 
 ## 下一步
 

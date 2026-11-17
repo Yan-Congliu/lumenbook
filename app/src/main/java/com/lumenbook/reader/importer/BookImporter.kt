@@ -48,6 +48,7 @@ object BookImporter {
     fun sniff(file: File, format: BookFormat): Meta = runCatching {
         when (format) {
             BookFormat.EPUB -> sniffEpub(file)
+            BookFormat.CBZ -> sniffCbz(file)
             BookFormat.FB2 -> sniffFb2(file)
             BookFormat.TXT -> sniffTxt(file)
             else -> Meta()
@@ -78,6 +79,27 @@ object BookImporter {
             return Meta(title = title?.trim(), author = author?.trim(), cover = cover)
         }
     }
+
+    // ---------- CBZ（漫画） ----------
+
+    /**
+     * 漫画没有元数据，书名就用文件名；封面取包内按名字排在最前面的那张图。
+     * 太大的（正常不会）直接放弃，免得把几 MB 的图塞进书库。
+     */
+    private fun sniffCbz(file: File): Meta {
+        ZipFile(file).use { zip ->
+            val entry = zip.entries().asSequence()
+                .filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXT }
+                .minByOrNull { it.name }
+                ?: return Meta()
+            if (entry.size > MAX_CBZ_COVER) return Meta()
+            val bytes = zip.getInputStream(entry).use { it.readBytes() }
+            return Meta(cover = bytes)
+        }
+    }
+
+    private val IMAGE_EXT = setOf("jpg", "jpeg", "png", "webp", "gif")
+    private const val MAX_CBZ_COVER = 6L * 1024 * 1024
 
     private fun tagText(xml: String, tag: String): String? =
         Regex("<$tag[^>]*>(.*?)</$tag>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
