@@ -28,6 +28,7 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
                 added_at INTEGER NOT NULL,
                 last_opened_at INTEGER,
                 progress REAL NOT NULL DEFAULT 0,
+                location TEXT,
                 finished INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent(),
@@ -36,7 +37,10 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // 阶段 2 还没有历史版本；以后加字段在这里按版本号 ALTER。
+        // v1 → v2：加阅读位置（CFI）。老书重新打开会从头开始，不影响书库。
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE books ADD COLUMN location TEXT")
+        }
     }
 
     fun all(): List<Book> = readableDatabase
@@ -63,6 +67,7 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
             put("added_at", if (book.addedAt > 0) book.addedAt else System.currentTimeMillis())
             put("last_opened_at", book.lastOpenedAt)
             put("progress", book.progress)
+            put("location", book.location)
             put("finished", if (book.finished) 1 else 0)
         }
         return writableDatabase.insert("books", null, values)
@@ -86,6 +91,20 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
             ContentValues().apply {
                 put("progress", progress.coerceIn(0f, 1f))
                 put("finished", if (finished) 1 else 0)
+            },
+            "id = ?",
+            arrayOf(id.toString()),
+        )
+    }
+
+    /** 阅读位置 + 进度一起写：翻页时频繁调用，只更新这两列。 */
+    fun updateLocation(id: Long, location: String?, progress: Float) {
+        writableDatabase.update(
+            "books",
+            ContentValues().apply {
+                put("location", location)
+                put("progress", progress.coerceIn(0f, 1f))
+                put("finished", if (progress >= 0.995f) 1 else 0)
             },
             "id = ?",
             arrayOf(id.toString()),
@@ -119,6 +138,7 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
         lastOpenedAt = if (isNull(getColumnIndexOrThrow("last_opened_at"))) null
         else getLong(getColumnIndexOrThrow("last_opened_at")),
         progress = getFloat(getColumnIndexOrThrow("progress")),
+        location = getStringOrNull("location"),
         finished = getInt(getColumnIndexOrThrow("finished")) != 0,
     )
 
@@ -129,6 +149,6 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
 
     private companion object {
         const val NAME = "lumenbook.db"
-        const val VERSION = 1
+        const val VERSION = 2
     }
 }

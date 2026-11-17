@@ -99,6 +99,14 @@ class LibraryRepository(
         _books.value = db.all()
     }
 
+    /**
+     * 记住阅读位置。翻页时会被频繁调用，所以只写库里这两列，
+     * 内存里的 books 列表等退出阅读页再刷新（refresh），避免每页都重建整个列表。
+     */
+    suspend fun saveLocation(id: Long, location: String?, progress: Float) = withContext(Dispatchers.IO) {
+        db.updateLocation(id, location, progress)
+    }
+
     private fun saveCover(id: String, bytes: ByteArray): File? = runCatching {
         val file = File(coverDir, "$id.img")
         file.writeBytes(bytes)

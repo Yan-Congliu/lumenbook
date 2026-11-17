@@ -25,6 +25,8 @@ data class Book(
     val addedAt: Long = 0L,
     val lastOpenedAt: Long? = null,
     val progress: Float = 0f,
+    /** 阅读位置（EPUB 用 CFI 字符串），下次打开据此恢复。 */
+    val location: String? = null,
     val finished: Boolean = false,
 )
 

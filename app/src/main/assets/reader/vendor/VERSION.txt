@@ -1,0 +1,4 @@
+foliate-js 1.0.1
+license: MIT
+tarball: https://registry.npmjs.org/foliate-js/-/foliate-js-1.0.1.tgz
+files: 34

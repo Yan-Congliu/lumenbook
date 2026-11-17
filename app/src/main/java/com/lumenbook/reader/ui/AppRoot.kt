@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.lumenbook.reader.data.AppContainer
 import com.lumenbook.reader.data.Appearance
 import com.lumenbook.reader.ui.library.LibraryScreen
+import com.lumenbook.reader.ui.reader.ReaderScreen
 import com.lumenbook.reader.ui.settings.SettingsScreen
 import com.lumenbook.reader.ui.stats.StatsScreen
 import com.lumenbook.reader.ui.theme.LocalLumenColors
@@ -65,8 +66,25 @@ fun LumenAppRoot(
     val scope = rememberCoroutineScope()
     val books by container.library.books.collectAsState()
     var tab by rememberSaveable { mutableStateOf(Tab.LIBRARY) }
+    var readingId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(Unit) { container.library.refresh() }
+
+    // 正在读的书；书被删掉时自动退回书库
+    val readingBook = readingId?.let { id -> books.firstOrNull { it.id == id } }
+
+    if (readingBook != null) {
+        ReaderScreen(
+            book = readingBook,
+            container = container,
+            colors = colors,
+            onClose = {
+                readingId = null
+                scope.launch { container.library.refresh() }
+            },
+        )
+        return
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNullOrEmpty()) return@rememberLauncherForActivityResult
@@ -109,7 +127,7 @@ fun LumenAppRoot(
                         onImport = importBooks,
                         onOpen = { book ->
                             scope.launch { container.library.markOpened(book.id) }
-                            Toast.makeText(context, "阅读内核还没接（阶段 3）", Toast.LENGTH_SHORT).show()
+                            readingId = book.id
                         },
                         onRename = { book, title, author ->
                             scope.launch { container.library.rename(book.id, title, author) }

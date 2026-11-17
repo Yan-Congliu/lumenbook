@@ -1,12 +1,12 @@
 # PROGRESS — 鎏书 LumenBook
 
 > 收尾必写。给下一个会话的 agent 看：做到哪了、怎么跑、哪块是坑。
-> 最近更新：2026-11-17 22:44（阶段 2 书库完成，等真机验收）
+> 最近更新：2026-11-17 23:20（阶段 3 EPUB 阅读跑通，等真机验收）
 
 ## 一句话状态
 
-阶段 0（工具链 + 可构建骨架）已完成并在真机跑通；**阶段 2（书库 + 导入 + 元数据 + 主题/深色）代码已完成、APK 已出包**，等用户在手机上验收。
-阅读内核（阶段 3）还没接，点书只弹「阅读内核还没接」。
+阶段 0/2 已在真机跑通；**阶段 3 的 EPUB 阅读内核已写完并出包（0.3.0）**：书卡点开 → WebView + foliate-js 分页排版、左右翻页、目录跳转、进度（CFI）落库、深浅两套主题都通了。
+TXT 转派生 EPUB、MOBI/AZW3 还没验证；PDF 是阶段 4。
 
 ## 阶段表
 
@@ -15,7 +15,7 @@
 | 0 | 工具链、可构建 Compose 骨架、hello APK、git/GitHub | ✅ 完成，真机验证通过 |
 | 1 | HTML 原型（书库/阅读页/设置/操作面板）→ `webproto/index.html` | ✅ 完成，截图在 `dist/proto-*.png` |
 | 2 | 书库：导入、封面、元数据抠取、重命名、删除、统计、设置、深色主题 | ✅ 代码完成，APK 0.2.0 已出包 |
-| 3 | 阅读内核：WebView + foliate-js 承载 EPUB/FB2/CBZ，TXT 转派生 EPUB | ⬜ 未开始 |
+| 3 | 阅读内核：WebView + foliate-js 承载 EPUB/FB2/CBZ，TXT 转派生 EPUB | 🟡 EPUB 已通；TXT/MOBI/AZW3 待验证 |
 | 4 | PDF 阅读（PdfRenderer） | ⬜ |
 | 5 | MOBI/AZW3 | ⬜ |
 | 6 | 元数据写回原文件（APP_ONLY / WRITE_BACK 双模式） | ⬜ |
@@ -26,8 +26,9 @@
 
 ```powershell
 python scripts\build_apk.py            # 出 debug 包到 dist\
-python scripts\bump_version.py --set 0.2.0
-python scripts\vendor_foliate.py       # 把 foliate-js 放进 assets（阶段 3 用）
+python scripts\bump_version.py --set 0.3.0
+python scripts\vendor_foliate.py       # 重新拉 foliate-js（自动打排版补丁）
+python scripts\reader_smoke.py         # 生成桌面冒烟站点（加 --serve 起 8899 端口）
 ```
 
 - 工具链全在 `.tooling/`（gitignore，不进仓库）。`build_apk.py` 会设好 `JAVA_HOME` / `ANDROID_HOME` / `GRADLE_USER_HOME` / `TMP`，**不要裸跑 gradle**。
@@ -63,6 +64,27 @@ app/src/main/java/com/lumenbook/reader/
 
 数据目录：文件副本 `filesDir/library/<uuid>.<ext>`，封面 `filesDir/covers/`，库 `filesDir/../databases/lumenbook.db`。
 
+## 阶段 3 做了什么（阅读内核）
+
+```
+app/src/main/assets/reader/
+├── index.html            WebView 入口：只放一个 <foliate-view>
+├── reader.css            --paper/--ink/--lumen-gap/--lumen-margin 这些排版变量
+├── reader.js             window.lumen.{open,applyTheme,goToHref,goToFraction,next,prev}
+│                         并回桥：Android.onPageLoad / onReady / onRelocate / onError / onToggleChrome
+└── vendor/foliate/       foliate-js 1.0.1（MIT），由 scripts/vendor_foliate.py 拉
+
+app/src/main/java/com/lumenbook/reader/ui/reader/ReaderScreen.kt
+    WebViewAssetLoader（域名 appassets.androidplatform.net）
+      /assets/ → assets/reader/    /book/ → 书库私有副本（同源，免 CORS）
+    AndroidView 里挂 WebView；addJavascriptInterface(bridge, "Android")
+    顶部栏（返回/书名+章节/目录）、底部进度滑条、目录 ModalBottomSheet
+    BookFormat.usesFoliate() 之外的格式走 UnsupportedFormatScreen 占位
+```
+
+- 打开流程：JS `bridge('onPageLoad')` → Kotlin 收到 `ui.pageLoaded` → `window.lumen.open(url, cfi, theme)` → JS 里 `makeBook → view.open → view.init({lastLocation}) → applyTheme()` → 回调 `onReady`（目录 + fraction）→ 每页 `onRelocate(cfi, {fraction,label})` → Kotlin 节流 2 秒写库 `books.location`（DB VERSION=2，`ALTER TABLE books ADD COLUMN location TEXT`）。
+- 书库点书 → `AppRoot.readingId` → `ReaderScreen`，返回时 `refresh()` 让进度/最近阅读即时更新。
+
 ## 关键决定（为什么这么做）
 
 - **不用 Room**：AGP 9 内置 Kotlin 2.2.10 后 KSP 版本匹配是额外风险，单表用 SQLiteOpenHelper 够用。
@@ -70,6 +92,8 @@ app/src/main/java/com/lumenbook/reader/
 - **改书名只改库里的记录**，对话框里明说"不动原文件"；写回是阶段 6 的独立功能（要二次确认）。
 - **主题不跟随壁纸取色**：Apple Books 的观感来自固定纸色，动态取色会破坏它。
 - **背景留了三态接口**（Paper/Solid/Image），启动时固定 Paper；设置页「自定义背景图」置灰占位。
+- **排版交给 foliate-js，不自己写分页**：分页 + CFI 定位 + 多格式解析是重活，MIT 且体积小（0.1 MB）。
+- **书文件用 WebViewAssetLoader 的虚拟域名喂给 WebView**：同源，`fetch` 直接能读，不用 base64 或 file:// 的权限坑。
 
 ## 版本锁定（实测可用，2026-11-17）
 
@@ -97,10 +121,18 @@ app/src/main/java/com/lumenbook/reader/
 - 本机 **没有连接安卓设备**（`adb devices` 为空），所以 UI 只能靠编译 + 原型截图自检，真机验证必须找用户。
 - Python 的 urllib 在这台机器上发 POST 会 `SSL: UNEXPECTED_EOF_WHILE_READING`（GET 正常）；Node 的 fetch 正常。
   所以 `gh_push.mjs` 用 Node 写，不用 Python。
+- **foliate 的 `setStyles()` 必须在 `view.init()` 之后调**：渲染器的文档和 style 槽位那时才建好，
+  早调只会被存起来然后丢掉，表现是「字号/纸色全没生效」但没有任何报错。
+- **foliate 把 `--_gap`/`--_margin`/`--_max-inline-size` 写死在 closed shadow 的 `#top` 上**，
+  子元素自己的声明会盖过继承值，从外面改不动 → 给 `paginator.js` 打了补丁改成读 `--lumen-*`
+  （`scripts/vendor_foliate.py` 里的 `patch_paginator()` 会在重新拉取后自动补上；升级 foliate 要确认它还能匹配）。
+- **`--_gap` 是百分数**（`parseFloat(value)/100`），写成 `26px` 会算出荒谬的边距。
+- 桌面调试入口：`assets/reader/index.html?book=<url>` 会自动打开，配合 `python scripts/reader_smoke.py --serve`
+  起本地站点（`.tooling/smoke/`，含一本生成的测试 EPUB），再用 ego 浏览器看效果——不用装 APK 就能验证排版。
 
-## 下一步（阶段 3）
+## 下一步
 
-1. `python scripts/vendor_foliate.py` 拉 foliate-js 到 `assets/reader/vendor/`。
-2. 写 `assets/reader/index.html` + `ReaderBridge.kt`（WebView、`addJavascriptInterface`、消息通道）。
-3. TXT：`scripts/txt_split_proto.py` 先做编码探测 + 拆章，产出测试向量，再在 Kotlin 里对齐。
-4. 书卡点击 → 打开阅读页；进度写回 `books.progress`。
+1. 真机验收 0.3.0（EPUB 翻页是否跟手、目录/进度是否正常）。
+2. TXT：`scripts/txt_split_proto.py` 做编码探测 + 拆章，产出小 EPUB 走同一引擎。
+3. MOBI/AZW3/CBZ：foliate 已带解析器，用真实样书验证（先测《中国2185》之外的几本）。
+4. 阶段 4 PDF（PdfRenderer），阶段 7 应用内更新。

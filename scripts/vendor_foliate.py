@@ -14,6 +14,9 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 WS = Path(__file__).resolve().parent.parent
 DEST = WS / "app" / "src" / "main" / "assets" / "reader" / "vendor" / "foliate"
 REGISTRY = "https://registry.npmjs.org/foliate-js"
@@ -79,6 +82,7 @@ def main() -> int:
                 dst.write(src.read())
 
     files = sorted(p.relative_to(DEST).as_posix() for p in DEST.rglob("*") if p.is_file())
+    patch_paginator()
     (DEST.parent / "VERSION.txt").write_text(
         f"foliate-js {version}\nlicense: {info.get('license')}\n"
         f"tarball: {tarball}\nfiles: {len(files)}\n",
@@ -90,6 +94,35 @@ def main() -> int:
     if len(files) > 25:
         print(f"    … 还有 {len(files) - 25} 个")
     return 0
+
+
+def patch_paginator() -> None:
+    """让宿主的排版变量能覆盖 paginator 写死在 shadow 里的默认值。
+
+    foliate 把 --_gap / --_margin / --_max-inline-size 直接定义在 shadow 内的 #top 上，
+    子元素自己声明的自定义属性会盖过继承值，所以从外面改不动（页边距永远是 7%）。
+    这里把它们改成读 --lumen-*，再带原默认值兜底。升级 foliate 后重跑本脚本即自动补上。
+    """
+    path = DEST / "paginator.js"
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8")
+    old = """        #top {
+            --_gap: 7%;
+            --_margin: 48px;
+            --_max-inline-size: 720px;"""
+    new = """        #top {
+            /* LUMENBOOK PATCH: 允许宿主(foliate-view)覆盖排版参数 */
+            --_gap: var(--lumen-gap, 7%);
+            --_margin: var(--lumen-margin, 48px);
+            --_max-inline-size: var(--lumen-max-inline-size, 720px);"""
+    if old in text:
+        path.write_text(text.replace(old, new), encoding="utf-8")
+        print("  ✓ 已打上排版参数补丁（--lumen-gap / --lumen-margin）")
+    elif "--lumen-gap" in text:
+        print("  · 排版参数补丁已存在")
+    else:
+        print("  ! 补丁失败：paginator.js 的结构变了，需要人工检查")
 
 
 if __name__ == "__main__":
