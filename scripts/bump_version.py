@@ -13,6 +13,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 GRADLE = Path(__file__).resolve().parent.parent / "app" / "build.gradle.kts"
 
 

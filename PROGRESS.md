@@ -1,53 +1,101 @@
-# 鎏书 LumenBook · PROGRESS
+# PROGRESS — 鎏书 LumenBook
 
-> 台账：每次开工读这里，收尾把「已完成 / 下一步 / 坑」写回来。
+> 收尾必写。给下一个会话的 agent 看：做到哪了、怎么跑、哪块是坑。
+> 最近更新：2026-11-17 22:44（阶段 2 书库完成，等真机验收）
 
-## 现在到哪了
+## 一句话状态
 
-**阶段 0 完成，阶段 1 待办** — 工具链装好，`assembleDebug` 通，第一个 hello-world APK 出包（`dist/lumenbook-0.1.0-debug-*.apk`）。
+阶段 0（工具链 + 可构建骨架）已完成并在真机跑通；**阶段 2（书库 + 导入 + 元数据 + 主题/深色）代码已完成、APK 已出包**，等用户在手机上验收。
+阅读内核（阶段 3）还没接，点书只弹「阅读内核还没接」。
 
 ## 阶段表
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| 0 | 工具链 + hello-world APK + 仓库骨架 | ✅ 完成 |
-| 1 | HTML 书库/阅读页原型（Books 观感）+ Python 拆章原型 | 原型已完成，拆章原型待做 |
-| 2 | Compose 书库、Room、SAF 导入、封面提取、重命名/删除 | 待办 |
-| 3 | WebView + foliate-js 阅读内核（EPUB/TXT） | 待办 |
-| 4 | PDF（PdfRenderer 分页、缩放、夜间反色） | 待办 |
-| 5 | MOBI/AZW3/FB2/CBZ + 格式探测 | 待办 |
-| 6 | 元数据编辑与写回（EPUB/FB2/PDF） | 待办 |
-| 7 | GitHub 应用内更新 + 首个 Release | 待办 |
-| 8 | 打磨（书签/空态/图标/启动图/崩溃兜底/docs） | 待办 |
+| 0 | 工具链、可构建 Compose 骨架、hello APK、git/GitHub | ✅ 完成，真机验证通过 |
+| 1 | HTML 原型（书库/阅读页/设置/操作面板）→ `webproto/index.html` | ✅ 完成，截图在 `dist/proto-*.png` |
+| 2 | 书库：导入、封面、元数据抠取、重命名、删除、统计、设置、深色主题 | ✅ 代码完成，APK 0.2.0 已出包 |
+| 3 | 阅读内核：WebView + foliate-js 承载 EPUB/FB2/CBZ，TXT 转派生 EPUB | ⬜ 未开始 |
+| 4 | PDF 阅读（PdfRenderer） | ⬜ |
+| 5 | MOBI/AZW3 | ⬜ |
+| 6 | 元数据写回原文件（APP_ONLY / WRITE_BACK 双模式） | ⬜ |
+| 7 | GitHub Releases 应用内更新 | ⬜ |
+| 8 | 打磨（进度同步、书签、字号行距、背景图） | ⬜ |
 
-## 可用版本组合（2026-11-17 实测出包）
+## 怎么跑
 
-| 组件 | 版本 | 备注 |
-|---|---|---|
-| JDK | Temurin 21.0.13 | `.tooling/jdk-21` |
-| Gradle | 9.9.1 | `.tooling/gradle/gradle-9.9.1` |
-| AGP | 9.5.1 | AGP 9 内置 Kotlin，**不要**再加 `org.jetbrains.kotlin.android` |
-| 内置 Kotlin | 2.2.10 | AGP 9.5.1 的 pom 里就是 `kotlin-gradle-plugin 2.2.10` |
-| Compose 编译器插件 | 2.2.10 | 必须等于内置 Kotlin 版本，否则报版本不匹配 |
-| compileSdk / targetSdk / minSdk | 37 / 37 / 26 | `platforms/android-37.0`（目录就叫 37.0） |
-| buildTools | 37.0.0 | |
-| Compose BOM | 2026.09.00 | |
-| core-ktx / activity-compose | 1.19.1 / 1.13.0 | 这两个都要求 AGP ≥ 9.1 且 compileSdk ≥ 37 |
+```powershell
+python scripts\build_apk.py            # 出 debug 包到 dist\
+python scripts\bump_version.py --set 0.2.0
+python scripts\vendor_foliate.py       # 把 foliate-js 放进 assets（阶段 3 用）
+```
 
-## 阶段 1 状态
+- 工具链全在 `.tooling/`（gitignore，不进仓库）。`build_apk.py` 会设好 `JAVA_HOME` / `ANDROID_HOME` / `GRADLE_USER_HOME` / `TMP`，**不要裸跑 gradle**。
+- 仓库：https://github.com/Yan-Congliu/lumenbook （public）。remote 用 https + token。
+- 推 GitHub：`git push` 的进度走 stderr，PowerShell 里可能显示 exit 1，实际是成功的，看 `git log origin/main` 确认。
 
-- `webproto/index.html` 已可看：书库（12 本书网格 + 分段控件 + 底部三标签）、阅读页（衬线正文、上下浮动工具条、页码进度）、
-  Aa 排版抽屉（字号 5 档 + 主题 3 种 + 行距 3 档）、长按菜单（打开/更改信息/移到电脑/移除/删除）。
-- 预览开关：`?shot=1` 去掉手机外框；`?view=reader|settings|actions` 直接进对应状态。
-- 截图（520×1040，Edge headless）：`dist/proto-library.png`、`proto-reader.png`、`proto-settings.png`、`proto-actions.png`。
-- 待做：TXT 拆章 Python 原型 + 测试向量（`scripts/txt_split_proto.py`）。
+## 阶段 2 做了什么（代码地图）
+
+```
+app/src/main/java/com/lumenbook/reader/
+├── MainActivity.kt            外观 collect → LumenTheme → AppRoot
+├── LumenApp.kt                Application，持有 AppContainer
+├── data/
+│   ├── Book.kt                Book 实体、BookFormat、Appearance
+│   ├── LibraryDb.kt           SQLiteOpenHelper（单表 books，刻意不用 Room）
+│   ├── LibraryRepository.kt   StateFlow 书列表、import/rename/remove/markOpened
+│   ├── Prefs.kt               DataStore（外观）
+│   └── AppContainer.kt        手写 DI
+├── importer/BookImporter.kt   格式探测、EPUB/FB2/TXT 元数据抠取、编码探测
+└── ui/
+    ├── AppRoot.kt             底部三标签 + SAF 多选导入 + Toast
+    ├── theme/LumenColors.kt   浅色米纸/深色墨纸两套色板 + 封面 12 色散列
+    ├── theme/Background.kt    LumenBackground（Paper/Solid/Image）← 未来换背景的接口
+    ├── theme/Theme.kt         LumenTheme、Typographic
+    ├── library/BookCover.kt   真封面解码，没有就用书名散列渐变
+    ├── library/LibraryScreen.kt  3 列网格、分段筛选、长按操作面板、重命名对话框
+    ├── settings/SettingsScreen.kt 外观三选、背景（预留）、关于
+    └── stats/StatsScreen.kt   藏书/在读/读完 + 格式分布
+```
+
+数据目录：文件副本 `filesDir/library/<uuid>.<ext>`，封面 `filesDir/covers/`，库 `filesDir/../databases/lumenbook.db`。
+
+## 关键决定（为什么这么做）
+
+- **不用 Room**：AGP 9 内置 Kotlin 2.2.10 后 KSP 版本匹配是额外风险，单表用 SQLiteOpenHelper 够用。
+- **导入即复制 + 记住 SAF Uri**：复制保证文件一直在，Uri 留给阶段 6 写回原文件。
+- **改书名只改库里的记录**，对话框里明说"不动原文件"；写回是阶段 6 的独立功能（要二次确认）。
+- **主题不跟随壁纸取色**：Apple Books 的观感来自固定纸色，动态取色会破坏它。
+- **背景留了三态接口**（Paper/Solid/Image），启动时固定 Paper；设置页「自定义背景图」置灰占位。
+
+## 版本锁定（实测可用，2026-11-17）
+
+| 组件 | 版本 |
+|---|---|
+| JDK | Temurin 21.0.13 |
+| Gradle | 9.9.1 |
+| AGP | 9.5.1 |
+| 内置 Kotlin / compose 插件 | 2.2.10（必须一致） |
+| compileSdk / targetSdk / minSdk | 37 / 37 / 26 |
+| Compose BOM | 2026.09.00 |
+| core-ktx / activity-compose / datastore | 1.19.1 / 1.13.0 / 1.3.0 |
+
+**AGP 8.x 彻底不可用**（AndroidX 1.19 硬要求 AGP ≥ 9.1 + compileSdk 37）。
+**AGP 9 内置 Kotlin**，不能再加 `org.jetbrains.kotlin.android` 插件，否则报 "no longer required"。
 
 ## 坑 / 教训
 
-- 本机 `curl.exe`、`Invoke-WebRequest` 的 TLS 握手必失败（Schannel），下载必须用 Python/Node。
-- 沙箱只允许写工作区 → `GRADLE_USER_HOME`、`ANDROID_USER_HOME` 都要重定向进 `.tooling/`，否则 Gradle 会在 `~/.gradle` 上撞墙。
-- AGP 9 的 `generateDebugGlobalSynthetics` 会往系统 Temp 写中间文件并失败（`AccessDeniedException ...\Temp\global_synthetics_intermediate...`）；
-  已由 `build_apk.py` 自动往 `.tooling/gradle-home/gradle.properties` 写 `systemProp.java.io.tmpdir=<工作区>/.tooling/tmp` 修掉。
-- AGP 8.13.2 + Gradle 8.14.3 这套退路**已经不可用**：2026 年的 AndroidX（core-ktx 1.19.1、compose runtime 1.12.x）硬要求 AGP ≥ 9.1 + compileSdk 37。
-- Windows 控制台是 GBK，Python 脚本里打 `✓`/`✗` 会 `UnicodeEncodeError`，脚本开头要 `reconfigure(encoding="utf-8")`。
-- Edge headless 窗口最小宽度约 500px，`--window-size=430,...` 会被裁右边，截图用 520 宽。
+- PowerShell、`Invoke-WebRequest`、`curl.exe` 在这台机器上 TLS 必挂 → 一切下载用 Python。
+- Windows 控制台是 GBK：Python 脚本开头必须 `sys.stdout.reconfigure(encoding="utf-8")`，否则打印 ✓ 直接 UnicodeEncodeError。
+  已修：`build_apk.py`、`bump_version.py`（先改文件再打印，所以崩了但版本号已经改了）。
+- Gradle 编译产物会写到 `C:\Users\asus\AppData\Local\Temp`，沙箱里 AccessDenied →
+  `systemProp.java.io.tmpdir` 指到 `.tooling/tmp`，并设 `TMP`/`TEMP` 环境变量（已在 `build_apk.py` 里）。
+- Edge headless 截图窗口最小宽度约 500px，用 `--window-size=520,1040`（430 会右侧被裁）。
+- 本机 **没有连接安卓设备**（`adb devices` 为空），所以 UI 只能靠编译 + 原型截图自检，真机验证必须找用户。
+
+## 下一步（阶段 3）
+
+1. `python scripts/vendor_foliate.py` 拉 foliate-js 到 `assets/reader/vendor/`。
+2. 写 `assets/reader/index.html` + `ReaderBridge.kt`（WebView、`addJavascriptInterface`、消息通道）。
+3. TXT：`scripts/txt_split_proto.py` 先做编码探测 + 拆章，产出测试向量，再在 Kotlin 里对齐。
+4. 书卡点击 → 打开阅读页；进度写回 `books.progress`。
