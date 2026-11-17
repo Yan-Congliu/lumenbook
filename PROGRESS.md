@@ -19,7 +19,7 @@ TXT 转派生 EPUB、MOBI/AZW3 还没验证。
 | 2 | 书库：导入、封面、元数据抠取、重命名、删除、统计、设置、深色主题 | ✅ 代码完成，APK 0.2.0 已出包 |
 | 3 | 阅读内核：WebView + foliate-js 承载 EPUB/FB2/CBZ，TXT 转派生 EPUB | 🟡 EPUB 真机可读（0.3.7）；TXT 已实现（0.4.1，桌面验证通过）；MOBI/AZW3 待验证 |
 | 4 | PDF 阅读（PdfRenderer） | 🟡 代码完成，APK 0.4.0 待真机验收 |
-| 5 | MOBI/AZW3 | 🟡 解析链路已用自造的最小 MOBI 验证（桌面通过），等一本真实样书 |
+| 5 | MOBI/AZW3 | 🟡 自造 MOBI6 样书（带 guide 目录）已跑通：标题、4 节、3 个 toc、跳章都对；AZW3/KF8 与真实书籍仍待验证 |
 | 6 | 元数据写回原文件（APP_ONLY / WRITE_BACK 双模式） | 🟡 EPUB 写回已实现 + 12 个单测通过，APK 0.5.0 待真机验收 |
 | 7 | GitHub Releases 应用内更新 | 🟡 检查/下载/安装链路 + 6 个单测通过；release 签名已配好（0.6.0） |
 | 8 | 打磨（进度同步、书签、字号行距、背景图） | ⬜ |
