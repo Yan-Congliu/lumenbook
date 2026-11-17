@@ -2,6 +2,7 @@ package com.lumenbook.reader.ui
 
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumenbook.reader.data.AppContainer
 import com.lumenbook.reader.data.Appearance
+import com.lumenbook.reader.data.BackgroundStore
 import com.lumenbook.reader.ui.library.LibraryScreen
 import com.lumenbook.reader.ui.reader.ReaderScreen
 import com.lumenbook.reader.ui.settings.SettingsScreen
@@ -118,7 +120,38 @@ fun LumenAppRoot(
         }
     }
 
-    LumenBackgroundLayer(LumenBackground.Paper, Modifier.fillMaxSize()) {
+    // ---- 自定义背景图 ----
+    val backgroundPath by container.prefs.backgroundImage.collectAsState(initial = null)
+    val backgroundPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val path = BackgroundStore.save(context, uri)
+                if (path != null) {
+                    container.prefs.setBackgroundImage(path)
+                } else {
+                    Toast.makeText(context, "这张图读不出来，换一张试试", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    val pickBackground: () -> Unit = {
+        backgroundPicker.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+        )
+    }
+    val clearBackground: () -> Unit = {
+        scope.launch {
+            container.prefs.setBackgroundImage(null)
+            BackgroundStore.clear(context)
+        }
+    }
+    val background = remember(backgroundPath) {
+        backgroundPath?.let { LumenBackground.Image(it, dim = 0.30f) } ?: LumenBackground.Paper
+    }
+
+    LumenBackgroundLayer(background, Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             Box(Modifier.weight(1f)) {
                 when (tab) {
@@ -161,6 +194,9 @@ fun LumenAppRoot(
                     Tab.SETTINGS -> SettingsScreen(
                         appearance = appearance,
                         onAppearanceChange = onAppearanceChange,
+                        backgroundImage = backgroundPath,
+                        onPickBackground = pickBackground,
+                        onClearBackground = clearBackground,
                     )
                 }
             }

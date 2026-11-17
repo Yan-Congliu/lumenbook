@@ -54,6 +54,9 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     appearance: Appearance,
     onAppearanceChange: (Appearance) -> Unit,
+    backgroundImage: String?,
+    onPickBackground: () -> Unit,
+    onClearBackground: () -> Unit,
 ) {
     val colors = LocalLumenColors.current
     val context = LocalContext.current
@@ -127,12 +130,26 @@ fun SettingsScreen(
 
         SectionTitle("页面背景")
         Card {
-            ChoiceRow("纸张（跟随外观）", selected = true, onClick = null)
+            ChoiceRow("纸张（跟随外观）", selected = backgroundImage == null) {
+                onClearBackground()
+            }
             Divider()
-            ChoiceRow("自定义背景图", selected = false, onClick = null, enabled = false)
+            ChoiceRow(
+                label = if (backgroundImage == null) "自定义背景图" else "自定义背景图（换一张）",
+                selected = backgroundImage != null,
+                onClick = onPickBackground,
+            )
+            if (backgroundImage != null) {
+                Divider()
+                ChoiceRow("清除背景图", selected = false) { onClearBackground() }
+            }
         }
         Text(
-            text = "背景图的接口已经留好了，等阅读内核做完再接上。",
+            text = if (backgroundImage == null) {
+                "挑一张手机里的图当书库底色，正文页仍然用纸色，保证读起来清静。"
+            } else {
+                "背景图已经铺上了；正文页不受影响。"
+            },
             fontSize = 11.sp,
             color = colors.textTertiary,
             modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 8.dp),

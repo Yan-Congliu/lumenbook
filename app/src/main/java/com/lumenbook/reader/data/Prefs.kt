@@ -40,6 +40,17 @@ class Prefs(private val context: Context) {
         )
     }
 
+    /** 自定义页面背景图的绝对路径（存在 filesDir/backgrounds/ 下），null = 用主题纸色。 */
+    val backgroundImage: Flow<String?> = context.settingsDataStore.data.map { prefs ->
+        prefs[KEY_BACKGROUND_IMAGE]?.takeIf { it.isNotBlank() }
+    }
+
+    suspend fun setBackgroundImage(path: String?) {
+        context.settingsDataStore.edit {
+            if (path.isNullOrBlank()) it.remove(KEY_BACKGROUND_IMAGE) else it[KEY_BACKGROUND_IMAGE] = path
+        }
+    }
+
     suspend fun setAppearance(value: Appearance) {
         context.settingsDataStore.edit { it[KEY_APPEARANCE] = value.name }
     }
@@ -76,5 +87,6 @@ class Prefs(private val context: Context) {
         val KEY_FONT_SIZE = intPreferencesKey("reader_font_size")
         val KEY_LINE_HEIGHT = floatPreferencesKey("reader_line_height")
         val KEY_MARGIN = intPreferencesKey("reader_margin")
+        val KEY_BACKGROUND_IMAGE = stringPreferencesKey("background_image")
     }
 }
