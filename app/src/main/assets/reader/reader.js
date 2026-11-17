@@ -211,6 +211,7 @@ async function open(url, cfi, themeJson) {
       fraction: lastReported.fraction < 0 ? 0 : lastReported.fraction,
     }
     bridge('onReady', JSON.stringify(payload))
+    showDiagnostics()
   } catch (e) {
     console.error(e)
     const msg = String(e?.message || e)
@@ -221,8 +222,38 @@ async function open(url, cfi, themeJson) {
   }
 }
 
-function goToHref(href) {
-  view.goTo(href).catch((e) => console.error('goTo', e))
+// 真机上没有控制台，也没法远程调试：把关键尺寸和计算结果画在页面底部一条细带里，
+// 出问题让用户截个图就能定位（定位完会去掉）。
+function showDiagnostics() {
+  try {
+    const strip = document.createElement('div')
+    strip.id = 'lumen-diag'
+    const content = (view.renderer?.getContents?.() || [])[0]
+    const doc = content?.doc
+    const cs = doc ? doc.defaultView.getComputedStyle(doc.body) : null
+    const box = view.getBoundingClientRect()
+    const parts = [
+      `视口 ${window.innerWidth}x${window.innerHeight}`,
+      `书页 ${Math.round(box.width)}x${Math.round(box.height)}`,
+      `正文 ${(doc?.body?.innerText || '').replace(/\s/g, '').length} 字`,
+      cs ? `${cs.color}／${cs.backgroundColor}` : '无文档',
+      debugTail(4),
+    ].filter(Boolean)
+    strip.textContent = parts.join(' · ')
+    Object.assign(strip.style, {
+      position: 'fixed', left: '0', right: '0', bottom: '0',
+      padding: '3px 6px', font: '9px/1.4 ui-monospace, monospace',
+      color: '#8a7f72', background: 'rgba(255,255,255,.8)',
+      zIndex: 99, whiteSpace: 'nowrap', overflow: 'hidden',
+      textOverflow: 'ellipsis', pointerEvents: 'none',
+    })
+    document.body.append(strip)
+  } catch (e) {
+    console.error('diagnostics', e)
+  }
+}
+
+function goToHref(href) {  view.goTo(href).catch((e) => console.error('goTo', e))
 }
 
 function goToFraction(frac) {

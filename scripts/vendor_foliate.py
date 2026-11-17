@@ -134,8 +134,9 @@ NEW_LOAD = r"""    async load(src, afterLoad, beforeRender) {
         // ② 排版在 closed shadow 里，出问题外面看不见；这里把每一步抛出 composed 事件，
         //    reader.js 收下来，真机卡住时能显示卡在哪个动作。
         const dbg = (stage, extra) => {
+            // 注意：这里的 View 不是 DOM 元素，没有 dispatchEvent，得走 document
             try {
-                this.dispatchEvent(new CustomEvent('lumen-debug', {
+                globalThis.document?.dispatchEvent(new CustomEvent('lumen-debug', {
                     detail: { stage, ...extra }, bubbles: true, composed: true,
                 }))
             } catch {}
@@ -152,6 +153,13 @@ NEW_LOAD = r"""    async load(src, afterLoad, beforeRender) {
 
                     // it needs to be visible for Firefox to get computed style
                     this.#iframe.style.display = 'block'
+                    dbg('measure', {
+                        vw: this.container?.clientWidth ?? -1,
+                        vh: this.container?.clientHeight ?? -1,
+                        iw: this.#iframe.clientWidth,
+                        ih: this.#iframe.clientHeight,
+                        text: (doc.body.textContent || '').trim().length,
+                    })
                     const { vertical, rtl } = getDirection(doc)
                     this.docBackground = getBackground(doc)
                     doc.body.style.background = 'none'
@@ -163,6 +171,12 @@ NEW_LOAD = r"""    async load(src, afterLoad, beforeRender) {
 
                     this.#contentRange.selectNodeContents(doc.body)
                     const layout = beforeRender?.({ vertical, rtl, background })
+                    dbg('layout', {
+                        w: Math.round(layout?.width ?? -1),
+                        h: Math.round(layout?.height ?? -1),
+                        cw: Math.round(layout?.columnWidth ?? -1),
+                        m: Math.round(layout?.margin ?? -1),
+                    })
                     this.#iframe.style.display = 'block'
                     this.render(layout)
                     this.#observer.observe(doc.body)
