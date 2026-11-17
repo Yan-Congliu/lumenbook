@@ -32,10 +32,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -54,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,6 +81,14 @@ import kotlinx.coroutines.withContext
 
 private enum class Filter(val label: String) { RECENT("最近阅读"), ALL("全部书籍"), FINISHED("已读完") }
 
+/** 排序方式。最近阅读沿用库里的顺序（打开过的排前面）。*/
+private enum class Sort(val label: String) {
+    RECENT("最近阅读"),
+    TITLE("书名"),
+    AUTHOR("作者"),
+    ADDED("加入时间"),
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
@@ -91,11 +103,25 @@ fun LibraryScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var sheetBook by remember { mutableStateOf<Book?>(null) }
     var editBook by remember { mutableStateOf<Book?>(null) }
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var sort by rememberSaveable { mutableStateOf(Sort.RECENT) }
 
-    val shown = when (filter) {
+    val picked = when (filter) {
         Filter.RECENT -> books
         Filter.ALL -> books.sortedByDescending { it.addedAt }
         Filter.FINISHED -> books.filter { it.finished }
+    }
+    val trimmed = query.trim()
+    val matched = if (trimmed.isEmpty()) picked else picked.filter { book ->
+        book.title.contains(trimmed, ignoreCase = true) ||
+            (book.author?.contains(trimmed, ignoreCase = true) ?: false)
+    }
+    val shown = when (sort) {
+        Sort.RECENT -> matched
+        Sort.TITLE -> matched.sortedBy { it.title }
+        Sort.AUTHOR -> matched.sortedWith(compareBy({ it.author.orEmpty() }, { it.title }))
+        Sort.ADDED -> matched.sortedByDescending { it.addedAt }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -113,6 +139,13 @@ fun LibraryScreen(
                 color = colors.text,
             )
             Spacer(Modifier.weight(1f))
+            IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
+                Icon(
+                    imageVector = if (searching) Icons.Filled.Close else Icons.Filled.Search,
+                    contentDescription = if (searching) "关闭搜索" else "搜索",
+                    tint = colors.textSecondary,
+                )
+            }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "更多", tint = colors.textSecondary)
@@ -126,8 +159,38 @@ fun LibraryScreen(
                             onImport()
                         },
                     )
+                    HorizontalDivider()
+                    Sort.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text("排序：${option.label}") },
+                            leadingIcon = {
+                                if (sort == option) {
+                                    Icon(Icons.Filled.Check, contentDescription = null)
+                                } else {
+                                    Spacer(Modifier.size(24.dp))
+                                }
+                            },
+                            onClick = {
+                                menuOpen = false
+                                sort = option
+                            },
+                        )
+                    }
                 }
             }
+        }
+
+        if (searching) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                placeholder = { Text("搜索书名或作者", fontSize = 14.sp) },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+            )
         }
 
         SegmentedControl(
@@ -140,8 +203,9 @@ fun LibraryScreen(
         when {
             shown.isEmpty() && books.isEmpty() -> EmptyLibrary(onImport)
             shown.isEmpty() -> Text(
-                text = when (filter) {
-                    Filter.FINISHED -> "还没有读完的书"
+                text = when {
+                    trimmed.isNotEmpty() -> "没有找到「$trimmed」"
+                    filter == Filter.FINISHED -> "还没有读完的书"
                     else -> "这里是空的"
                 },
                 color = colors.textSecondary,
