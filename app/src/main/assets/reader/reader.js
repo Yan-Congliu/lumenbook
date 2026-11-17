@@ -44,14 +44,24 @@ window.addEventListener('unhandledrejection', (e) => {
   bridge('onError', 'JS 异常: ' + ((r && r.message) || r || 'unknown'))
 })
 
+/** 顶栏/底栏占掉的高度（px）：正文要躲开它们，但纸张背景仍然铺满整屏。 */
+let insets = { top: 0, bottom: 0 }
+
 /** 兜底：安卓 WebView 有时先给 0 高度再放大，这里按视口把书页尺寸直接钉死，
  *  不让排版去依赖 html/body 的百分比高度链。 */
 function syncViewSize() {
   const w = window.innerWidth || document.documentElement.clientWidth || 0
-  const h = window.innerHeight || document.documentElement.clientHeight || 0
+  const rawH = window.innerHeight || document.documentElement.clientHeight || 0
+  const h = Math.max(0, rawH - insets.top - insets.bottom)
   if (w > 0) view.style.width = w + 'px'
   if (h > 0) view.style.height = h + 'px'
+  view.style.top = insets.top + 'px'
   return { w, h }
+}
+
+function setInsets(top, bottom) {
+  insets = { top: Math.max(0, top | 0), bottom: Math.max(0, bottom | 0) }
+  return syncViewSize()
 }
 
 syncViewSize()
@@ -208,6 +218,13 @@ async function open(url, cfi, themeJson) {
 
     stage('解析书结构')
     await withTimeout(view.open(file), 20000, '解析书结构')
+    // 翻页动画：真正干活的是内部的 <foliate-paginator>（View 只是个壳），
+    // 只有它身上有 animated 才会走 300ms 缓动，所以补到它身上。
+    try {
+      view.renderer?.setAttribute?.('animated', '')
+    } catch (e) {
+      console.error('animated', e)
+    }
     stage('排版')
     await withTimeout(
       view.init({ lastLocation: cfi || undefined, showTextStart: !cfi }),
@@ -332,6 +349,7 @@ window.addEventListener('pointerup', (e) => {
 window.lumen = {
   open,
   applyTheme,
+  setInsets,
   goToHref,
   goToFraction,
   next,

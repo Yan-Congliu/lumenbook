@@ -21,12 +21,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -56,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -394,6 +398,20 @@ fun ReaderScreen(
             opened = true
             webView.evaluateJavascript(openScript, null)
         }
+    }
+
+    // 正文要躲开顶栏/底栏（否则文字会从半透明栏下面透出来），
+    // 但又不能让纸张背景出现断层——所以把栏的高度推给网页，由它自己让出位置。
+    val density = LocalDensity.current
+    val statusBarPx = WindowInsets.statusBars.getTop(density)
+    val navBarPx = WindowInsets.navigationBars.getBottom(density)
+    LaunchedEffect(ui.chromeVisible, ui.ready) {
+        val barTop = if (ui.chromeVisible) with(density) { 56.dp.roundToPx() } else 0
+        val barBottom = if (ui.chromeVisible) with(density) { 44.dp.roundToPx() } else 0
+        webView.evaluateJavascript(
+            "window.lumen && window.lumen.setInsets(${statusBarPx + barTop}, ${navBarPx + barBottom})",
+            null,
+        )
     }
 
     // 看门狗：真机上看不到日志，所以把「卡在哪一步」直接写在屏幕上。
