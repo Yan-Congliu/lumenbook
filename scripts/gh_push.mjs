@@ -164,10 +164,11 @@ for (const commit of commits) {
 if (dryRun) process.exit(0);
 
 await gh("PATCH", `/repos/${slug}/git/refs/heads/${branch}`, { sha: newSha, force: false });
-try {
-  git(["update-ref", `refs/remotes/origin/${branch}`, newSha]);
-} catch {
-  console.log(`! 本地没有 ${newSha.slice(0, 8)} 这个对象，refs/remotes/origin/${branch} 暂不更新（远端已是它）。`);
+
+// 远端 sha 本地不存在，但内容等于本地 HEAD；把 origin/<branch> 指到本地 HEAD，
+// 这样 git status 不会一直显示 ahead，下次脚本也能从干净状态开始。
+if (sync[newSha] === head || newSha === head) {
+  git(["update-ref", `refs/remotes/origin/${branch}`, head]);
 }
 console.log(`✓ 已更新 ${branch} -> ${newSha.slice(0, 8)}`);
 console.log(`  https://github.com/${slug}/commit/${newSha}`);
