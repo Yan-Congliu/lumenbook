@@ -1,12 +1,13 @@
 # PROGRESS — 鎏书 LumenBook
 
 > 收尾必写。给下一个会话的 agent 看：做到哪了、怎么跑、哪块是坑。
-> 最近更新：2026-11-17 23:20（阶段 3 EPUB 阅读跑通，等真机验收）
+> 最近更新：2026-11-18 00:00（EPUB 真机可读，0.3.7 调完排版手感）
 
 ## 一句话状态
 
-阶段 0/2 已在真机跑通；**阶段 3 的 EPUB 阅读内核已写完并出包（0.3.0）**：书卡点开 → WebView + foliate-js 分页排版、左右翻页、目录跳转、进度（CFI）落库、深浅两套主题都通了。
-TXT 转派生 EPUB、MOBI/AZW3 还没验证；PDF 是阶段 4。
+阶段 0/2/3(EPUB) 已在真机跑通：书卡点开 → WebView + foliate-js 分页排版、左右翻页、目录跳转、进度（CFI）落库、深浅两套主题。
+真机上踩穿了三个坑（JS 接口类必须 public、paginator 的 blob iframe 在安卓不触发 load、书页容器高度算成 0），现已稳定。
+TXT 转派生 EPUB、MOBI/AZW3 还没验证；PDF 是阶段 4（用户最常用 PDF + EPUB）。
 
 ## 阶段表
 
@@ -15,7 +16,7 @@ TXT 转派生 EPUB、MOBI/AZW3 还没验证；PDF 是阶段 4。
 | 0 | 工具链、可构建 Compose 骨架、hello APK、git/GitHub | ✅ 完成，真机验证通过 |
 | 1 | HTML 原型（书库/阅读页/设置/操作面板）→ `webproto/index.html` | ✅ 完成，截图在 `dist/proto-*.png` |
 | 2 | 书库：导入、封面、元数据抠取、重命名、删除、统计、设置、深色主题 | ✅ 代码完成，APK 0.2.0 已出包 |
-| 3 | 阅读内核：WebView + foliate-js 承载 EPUB/FB2/CBZ，TXT 转派生 EPUB | 🟡 EPUB 已通；TXT/MOBI/AZW3 待验证 |
+| 3 | 阅读内核：WebView + foliate-js 承载 EPUB/FB2/CBZ，TXT 转派生 EPUB | 🟡 EPUB 真机可读（0.3.7）；TXT/MOBI/AZW3 待验证 |
 | 4 | PDF 阅读（PdfRenderer） | ⬜ |
 | 5 | MOBI/AZW3 | ⬜ |
 | 6 | 元数据写回原文件（APP_ONLY / WRITE_BACK 双模式） | ⬜ |
@@ -138,10 +139,20 @@ app/src/main/java/com/lumenbook/reader/ui/reader/ReaderScreen.kt
 - **`--_gap` 是百分数**（`parseFloat(value)/100`），写成 `26px` 会算出荒谬的边距。
 - 桌面调试入口：`assets/reader/index.html?book=<url>` 会自动打开，配合 `python scripts/reader_smoke.py --serve`
   起本地站点（`.tooling/smoke/`，含一本生成的测试 EPUB），再用 ego 浏览器看效果——不用装 APK 就能验证排版。
+- **paginator 用 `blob:` URL 当 iframe.src，安卓 WebView 不触发 `load` 事件** → `view.init()` 永不 resolve，
+  表现是永远「卡在排版」。修法：`scripts/vendor_foliate.py` 的 `patch_paginator_load()` 把
+  `#iframe.src = src` 换成 `fetch(src).then(r=>r.text()).then(t => { #iframe.srcdoc = t })`，整段包 try/catch 并在出错时 reject。
+- **安卓 WebView 一开始给网页 0 高度**，`html/body{height:100%}` 一路算成 0，多栏排版会把整本书摊成
+  134 万 px 宽、39px 高的一条横线（症状：能打开、没文字）。修法：`foliate-view` 用 `position:fixed;inset:0`
+  贴视口，`syncViewSize()` 直接拿 `innerWidth/innerHeight` 写 px，并在 `resize`/重排后再钉一次。
+- **安卓 WebView 的 font boosting 会把字号偷偷放大**（19px → 21.28px），一行只剩 12 个字：
+  `settings.textZoom = 100` + CSS `-webkit-text-size-adjust: 100%`（`reader.css` 和注入正文的 `contentCss()` 都要加）。
+- 诊断卡只在 `index.html?diag=1` 时出现，别常驻屏幕中间。
 
 ## 下一步
 
-1. 真机验收 0.3.0（EPUB 翻页是否跟手、目录/进度是否正常）。
-2. TXT：`scripts/txt_split_proto.py` 做编码探测 + 拆章，产出小 EPUB 走同一引擎。
-3. MOBI/AZW3/CBZ：foliate 已带解析器，用真实样书验证（先测《中国2185》之外的几本）。
-4. 阶段 4 PDF（PdfRenderer），阶段 7 应用内更新。
+1. 用户验收 0.3.7 排版手感（18px / 1.8 行距 / 32 边距，一行约 18 字）。
+2. 阅读设置面板：字号、行距、页边距、纸张/墨色，改完直接 `applyTheme` 重排（接口已经在了）。
+3. 阶段 4 PDF（PdfRenderer + 双指缩放 + 单页/双页），用户最常用 PDF。
+4. TXT：`scripts/txt_split_proto.py` 做编码探测 + 拆章，产出小 EPUB 走同一引擎；MOBI/AZW3 用真实样书验证。
+5. 阶段 7 应用内更新（GitHub Releases + 检查 `latest` 资产名 `lumenbook-<ver>-arm64-v8a.apk`）。
