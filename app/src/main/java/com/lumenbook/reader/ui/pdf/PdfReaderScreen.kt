@@ -4,8 +4,10 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -25,9 +27,13 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -47,6 +53,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -59,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
 import com.lumenbook.reader.data.AppContainer
 import com.lumenbook.reader.data.Book
+import com.lumenbook.reader.data.Bookmark
 import com.lumenbook.reader.ui.theme.LumenColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -107,6 +117,7 @@ private class PdfDocument(file: File) : Closeable {
 private fun savedPage(location: String?): Int =
     location?.removePrefix("page:")?.toIntOrNull()?.coerceAtLeast(0) ?: 0
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PdfReaderScreen(
     book: Book,
@@ -147,6 +158,13 @@ fun PdfReaderScreen(
     val pagerState = rememberPagerState(initialPage = startPage) { pageCount.coerceAtLeast(1) }
     var chromeVisible by remember { mutableStateOf(true) }
     var renderedPage by remember { mutableIntStateOf(startPage) }
+    var bookmarks by remember(book.id) { mutableStateOf<List<Bookmark>>(emptyList()) }
+    var showBookmarks by remember { mutableStateOf(false) }
+
+    val currentLocation = "page:$renderedPage"
+    val currentBookmarked = bookmarks.any { it.location == currentLocation }
+
+    LaunchedEffect(book.id) { bookmarks = container.library.bookmarks(book.id) }
 
     // 翻页落库（松手后 300ms 才算数，避免快速滑动时反复写库）
     LaunchedEffect(pagerState) {
@@ -185,6 +203,15 @@ fun PdfReaderScreen(
                     title = book.title,
                     subtitle = "${renderedPage + 1} / $pageCount",
                     colors = colors,
+                    bookmarked = currentBookmarked,
+                    hasBookmarks = bookmarks.isNotEmpty(),
+                    onBookmark = {
+                        scope.launch {
+                            container.library.toggleBookmark(book.id, currentLocation, "第 ${renderedPage + 1} 页")
+                            bookmarks = container.library.bookmarks(book.id)
+                        }
+                    },
+                    onList = { if (bookmarks.isNotEmpty()) showBookmarks = true },
                     onBack = onClose,
                 )
                 Spacer(Modifier.weight(1f))
@@ -200,7 +227,65 @@ fun PdfReaderScreen(
             }
         }
     }
+
+    if (showBookmarks) {
+        ModalBottomSheet(
+            onDismissRequest = { showBookmarks = false },
+            containerColor = colors.surface,
+        ) {
+            Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                Text(
+                    "书签",
+                    color = colors.text,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(start = 24.dp, bottom = 8.dp),
+                )
+                bookmarks.forEach { mark ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = mark.label,
+                            color = colors.text,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    showBookmarks = false
+                                    scope.launch {
+                                        pagerState.scrollToPage(mark.pageOf().coerceIn(0, pageCount - 1))
+                                    }
+                                }
+                                .padding(start = 24.dp, top = 12.dp, bottom = 12.dp),
+                        )
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    container.library.removeBookmark(mark.id)
+                                    bookmarks = container.library.bookmarks(book.id)
+                                }
+                            },
+                        ) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "删除书签",
+                                tint = colors.textTertiary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
+
+/** 书签位置 → 页码。PDF 的位置格式就是 `page:N`。 */
+private fun Bookmark.pageOf(): Int = location.removePrefix("page:").toIntOrNull() ?: 0
 
 /** 一页 PDF：按视口宽度渲染，支持双指缩放（放大后可拖）。 */
 @Composable
@@ -299,6 +384,10 @@ private fun PdfTopBar(
     title: String,
     subtitle: String,
     colors: LumenColors,
+    bookmarked: Boolean,
+    hasBookmarks: Boolean,
+    onBookmark: () -> Unit,
+    onList: () -> Unit,
     onBack: () -> Unit,
 ) {
     Row(
@@ -328,6 +417,35 @@ private fun PdfTopBar(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(subtitle, color = colors.textTertiary, fontSize = 11.sp)
+        }
+        IconButton(onClick = onBookmark) {
+            Canvas(Modifier.size(19.dp)) {
+                val w = size.width
+                val h = size.height
+                val path = Path().apply {
+                    moveTo(w * 0.16f, h * 0.04f)
+                    lineTo(w * 0.84f, h * 0.04f)
+                    lineTo(w * 0.84f, h * 0.96f)
+                    lineTo(w * 0.50f, h * 0.72f)
+                    lineTo(w * 0.16f, h * 0.96f)
+                    close()
+                }
+                drawPath(
+                    path,
+                    if (bookmarked) colors.accent else colors.text,
+                    style = if (bookmarked) Fill else Stroke(width = h * 0.10f),
+                )
+            }
+        }
+        if (hasBookmarks) {
+            IconButton(onClick = onList) {
+                Icon(
+                    Icons.AutoMirrored.Filled.List,
+                    contentDescription = "书签列表",
+                    tint = colors.text,
+                    modifier = Modifier.size(21.dp),
+                )
+            }
         }
     }
 }

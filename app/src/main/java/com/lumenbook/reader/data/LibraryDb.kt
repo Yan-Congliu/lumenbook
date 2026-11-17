@@ -34,12 +34,39 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
             """.trimIndent(),
         )
         db.execSQL("CREATE INDEX idx_books_added ON books(added_at)")
+        db.execSQL(
+            """
+            CREATE TABLE bookmarks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id INTEGER NOT NULL,
+                location TEXT NOT NULL,
+                chapter TEXT,
+                created_at INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX idx_bookmarks_book ON bookmarks(book_id)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         // v1 → v2：加阅读位置（CFI）。老书重新打开会从头开始，不影响书库。
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE books ADD COLUMN location TEXT")
+        }
+        // v2 → v3：书签。书签是「书 + 位置」，位置对 EPUB 是 CFI、对 PDF 是 page:N。
+        if (oldVersion < 3) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS bookmarks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    book_id INTEGER NOT NULL,
+                    location TEXT NOT NULL,
+                    chapter TEXT,
+                    created_at INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_bookmarks_book ON bookmarks(book_id)")
         }
     }
 
@@ -95,7 +122,8 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
         )
     }
 
-    fun updateProgress(id: Long, progress: Float, finished: Boolean) {        writableDatabase.update(
+    fun updateProgress(id: Long, progress: Float, finished: Boolean) {
+        writableDatabase.update(
             "books",
             ContentValues().apply {
                 put("progress", progress.coerceIn(0f, 1f))
@@ -131,6 +159,62 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
 
     fun delete(id: Long) {
         writableDatabase.delete("books", "id = ?", arrayOf(id.toString()))
+        // 书删了，书签也没意义了
+        writableDatabase.delete("bookmarks", "book_id = ?", arrayOf(id.toString()))
+    }
+
+    // ---- 书签 ----
+
+    fun bookmarks(bookId: Long): List<Bookmark> = readableDatabase
+        .rawQuery(
+            "SELECT * FROM bookmarks WHERE book_id = ? ORDER BY created_at DESC",
+            arrayOf(bookId.toString()),
+        )
+        .use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    add(
+                        Bookmark(
+                            id = c.getLong(c.getColumnIndexOrThrow("id")),
+                            bookId = c.getLong(c.getColumnIndexOrThrow("book_id")),
+                            location = c.getString(c.getColumnIndexOrThrow("location")),
+                            chapter = c.getStringOrNull("chapter"),
+                            createdAt = c.getLong(c.getColumnIndexOrThrow("created_at")),
+                        ),
+                    )
+                }
+            }
+        }
+
+    fun findBookmark(bookId: Long, location: String): Bookmark? = readableDatabase
+        .rawQuery(
+            "SELECT * FROM bookmarks WHERE book_id = ? AND location = ? LIMIT 1",
+            arrayOf(bookId.toString(), location),
+        )
+        .use { c ->
+            if (!c.moveToFirst()) return null
+            Bookmark(
+                id = c.getLong(c.getColumnIndexOrThrow("id")),
+                bookId = c.getLong(c.getColumnIndexOrThrow("book_id")),
+                location = c.getString(c.getColumnIndexOrThrow("location")),
+                chapter = c.getStringOrNull("chapter"),
+                createdAt = c.getLong(c.getColumnIndexOrThrow("created_at")),
+            )
+        }
+
+    fun addBookmark(bookId: Long, location: String, chapter: String?): Long = writableDatabase.insert(
+        "bookmarks",
+        null,
+        ContentValues().apply {
+            put("book_id", bookId)
+            put("location", location)
+            put("chapter", chapter)
+            put("created_at", System.currentTimeMillis())
+        },
+    )
+
+    fun removeBookmark(id: Long) {
+        writableDatabase.delete("bookmarks", "id = ?", arrayOf(id.toString()))
     }
 
     private fun android.database.Cursor.toBook(): Book = Book(
@@ -158,6 +242,6 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
 
     private companion object {
         const val NAME = "lumenbook.db"
-        const val VERSION = 2
+        const val VERSION = 3
     }
 }

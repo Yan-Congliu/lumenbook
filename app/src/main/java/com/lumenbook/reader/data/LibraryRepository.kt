@@ -204,6 +204,25 @@ class LibraryRepository(
         db.updateLocation(id, location, progress)
     }
 
+    // ---- 书签 ----
+
+    suspend fun bookmarks(bookId: Long): List<Bookmark> = withContext(Dispatchers.IO) { db.bookmarks(bookId) }
+
+    /** 当前位置没有书签就加上，有就删掉（顶栏那一个按钮是切换）。 */
+    suspend fun toggleBookmark(bookId: Long, location: String, chapter: String?): Boolean =
+        withContext(Dispatchers.IO) {
+            val existing = db.findBookmark(bookId, location)
+            if (existing != null) {
+                db.removeBookmark(existing.id)
+                false
+            } else {
+                db.addBookmark(bookId, location, chapter)
+                true
+            }
+        }
+
+    suspend fun removeBookmark(id: Long) = withContext(Dispatchers.IO) { db.removeBookmark(id) }
+
     private fun saveCover(id: String, bytes: ByteArray): File? = runCatching {
         val file = File(coverDir, "$id.img")
         file.writeBytes(bytes)

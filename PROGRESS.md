@@ -224,11 +224,30 @@ importer/EpubRewriter.kt      OPF 里换 dc:title / dc:creator / 封面；整包
 - **安卓 WebView 的 font boosting 会把字号偷偷放大**（19px → 21.28px），一行只剩 12 个字：
   `settings.textZoom = 100` + CSS `-webkit-text-size-adjust: 100%`（`reader.css` 和注入正文的 `contentCss()` 都要加）。
 - 诊断卡只在 `index.html?diag=1` 时出现，别常驻屏幕中间。
+- **`WindowInsets` 给的是物理像素，WebView 里的 CSS px 等于 dp**。把 `statusBars.getTop(density)`
+  原样传给 `window.lumen.setInsets()` 会放大 2~4 倍，症状是「正文从屏幕中间往下开始、底部还被切」。
+  必须先 `/ density.density` 换成 dp 再传（0.6.1 修）。
+
+## 阶段 8：书签（0.6.1）
+
+```
+data/Bookmark.kt            location 一体两用：EPUB 存 CFI，PDF 存 "page:N"
+data/LibraryDb.kt           VERSION = 3，表 bookmarks(id, book_id, location, chapter, created_at)
+                            bookmarks()/findBookmark()/addBookmark()/removeBookmark()；删书连带删书签
+data/LibraryRepository.kt   bookmarks()/toggleBookmark()/removeBookmark()
+ui/reader/ReaderScreen.kt   顶栏书签按钮（自绘 BookmarkGlyph：core 图标集里没有 Bookmark，
+                            引 material-icons-extended 会多十几 MB），目录面板顶部多一段「书签」
+ui/pdf/PdfReaderScreen.kt   同样一枚按钮 + 书签列表（点了 scrollToPage）
+assets/reader/reader.js     window.lumen.goToCfi(cfi) → view.goTo(cfi)
+```
+
+桌面验证：`goToCfi` 从第三章跳回 `epubcfi(/6/4!/4/2,,/10/1:6)`，fraction 0.661、章节回到「第二章 灯下」。
 
 ## 下一步
 
-1. 用户验收 0.6.0：PDF 翻页手感 / TXT 拆章 / 长按「编辑书籍信息」+ 勾选「同时写回文件」/ 设置里的「检查更新」。
+1. 用户验收 0.6.1：正文是否从顶栏下方开始（insets 修好了）、书签按钮/列表、PDF 上的书签。
 2. 发一个 GitHub Release（需要用户点头），资产名必须是 `lumenbook-<ver>-arm64-v8a.apk`，之后应用内更新才能真的走通。
 3. 正式版包名是 `com.lumenbook.reader`（debug 是 `com.lumenbook.reader.debug`，是另一个应用）：用户要从 debug 切到 release，得手动装一次 `dist/lumenbook-0.6.0-arm64-v8a.apk`，之后才能靠应用内更新升级。
 4. MOBI/AZW3 用真实样书验证（自造样书已确认解析链路可用）。
-5. 阶段 8 打磨：书签、背景图（`LumenBackground` 接口已留）、PDF 目录。
+5. 阶段 8 剩下的：背景图接入（`LumenBackground.Image` 接口已留、设置里那一行还置灰）、PDF 目录、书库搜索/排序。
+

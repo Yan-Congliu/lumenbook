@@ -14,6 +14,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -58,7 +60,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -71,6 +78,7 @@ import com.lumenbook.reader.BuildConfig
 import com.lumenbook.reader.data.AppContainer
 import com.lumenbook.reader.data.Book
 import com.lumenbook.reader.data.BookFormat
+import com.lumenbook.reader.data.Bookmark
 import com.lumenbook.reader.data.ReaderStyle
 import com.lumenbook.reader.ui.pdf.PdfReaderScreen
 import com.lumenbook.reader.ui.theme.LumenColors
@@ -320,6 +328,9 @@ fun ReaderScreen(
     var showToc by remember { mutableStateOf(false) }
     var showStyle by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) }
+    var bookmarks by remember(book.id) { mutableStateOf<List<Bookmark>>(emptyList()) }
+    // 当前这一页有没有书签：CFI 精确到位置，换个段落就算另一处
+    val currentBookmarked = bookmarks.any { it.location == ui.cfi }
     var lastError by remember { mutableStateOf<String?>(null) }
     val lastSaveAt = remember { longArrayOf(0L) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
@@ -420,16 +431,40 @@ fun ReaderScreen(
         }
     }
 
+    // 书签：进书时读一次，增删后重读
+    LaunchedEffect(book.id) {
+        bookmarks = container.library.bookmarks(book.id)
+    }
+
+    val toggleBookmark: () -> Unit = {
+        val location = ui.cfi
+        if (location.isNullOrBlank()) {
+            scope.launch {
+                bookmarks = container.library.bookmarks(book.id)
+            }
+        } else {
+            scope.launch {
+                container.library.toggleBookmark(book.id, location, ui.chapter.ifBlank { null })
+                bookmarks = container.library.bookmarks(book.id)
+            }
+        }
+    }
+
     // 正文要躲开顶栏/底栏（否则文字会从半透明栏下面透出来），
     // 但又不能让纸张背景出现断层——所以把栏的高度推给网页，由它自己让出位置。
+    //
+    // ⚠️ 单位：WindowInsets 给的是物理像素，而 WebView 里的 CSS px 等于 dp
+    // （WebView 的 devicePixelRatio 就等于屏幕 density）。直接把 px 传给 CSS 会放大 2~4 倍，
+    // 表现成「正文被顶到屏幕中间、底部还被切掉」——真机上踩过这个坑。
     val density = LocalDensity.current
-    val statusBarPx = WindowInsets.statusBars.getTop(density)
-    val navBarPx = WindowInsets.navigationBars.getBottom(density)
+    val scale = density.density
+    val statusBarDp = WindowInsets.statusBars.getTop(density) / scale
+    val navBarDp = WindowInsets.navigationBars.getBottom(density) / scale
     LaunchedEffect(ui.chromeVisible, ui.ready) {
-        val barTop = if (ui.chromeVisible) with(density) { 56.dp.roundToPx() } else 0
-        val barBottom = if (ui.chromeVisible) with(density) { 44.dp.roundToPx() } else 0
+        val barTopDp = if (ui.chromeVisible) 56f else 0f
+        val barBottomDp = if (ui.chromeVisible) 44f else 0f
         webView.evaluateJavascript(
-            "window.lumen && window.lumen.setInsets(${statusBarPx + barTop}, ${navBarPx + barBottom})",
+            "window.lumen && window.lumen.setInsets(${statusBarDp + barTopDp}, ${navBarDp + barBottomDp})",
             null,
         )
     }
@@ -460,8 +495,10 @@ fun ReaderScreen(
                     title = book.title,
                     subtitle = ui.chapter,
                     colors = colors,
+                    bookmarked = currentBookmarked,
+                    onBookmark = toggleBookmark,
                     onBack = { finish() },
-                    onToc = { if (ui.toc.isNotEmpty()) showToc = true },
+                    onToc = { if (ui.toc.isNotEmpty() || bookmarks.isNotEmpty()) showToc = true },
                 )
                 Spacer(Modifier.weight(1f))
                 ReaderBottomBar(
@@ -528,46 +565,127 @@ fun ReaderScreen(
             onDismissRequest = { showToc = false },
             containerColor = colors.surface,
         ) {
-            Text(
-                "目录",
-                color = colors.text,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(start = 24.dp, bottom = 8.dp),
-            )
-            HorizontalDivider(color = colors.separator)
             LazyColumn(
-                modifier = Modifier.fillMaxWidth().height(420.dp),
+                modifier = Modifier.fillMaxWidth().height(440.dp),
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
-                items(ui.toc) { node ->
-                    Text(
-                        text = node.label,
-                        color = if (node.depth == 0) colors.text else colors.textSecondary,
-                        fontSize = if (node.depth == 0) 15.sp else 13.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                showToc = false
-                                node.href?.let { href ->
-                                    webView.evaluateJavascript(
-                                        "window.lumen.goToHref(${JSONObject.quote(href)})",
-                                        null,
-                                    )
-                                }
+                if (bookmarks.isNotEmpty()) {
+                    item {
+                        Text(
+                            "书签",
+                            color = colors.text,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(start = 24.dp, bottom = 8.dp),
+                        )
+                    }
+                    items(bookmarks, key = { it.id }) { mark ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = mark.label,
+                                color = colors.text,
+                                fontSize = 15.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        showToc = false
+                                        webView.evaluateJavascript(
+                                            "window.lumen.goToCfi(${JSONObject.quote(mark.location)})",
+                                            null,
+                                        )
+                                    }
+                                    .padding(start = 24.dp, top = 12.dp, bottom = 12.dp),
+                            )
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        container.library.removeBookmark(mark.id)
+                                        bookmarks = container.library.bookmarks(book.id)
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "删除书签",
+                                    tint = colors.textTertiary,
+                                    modifier = Modifier.size(16.dp),
+                                )
                             }
-                            .padding(
-                                start = 24.dp + (node.depth * 16).dp,
-                                end = 24.dp,
-                                top = 11.dp,
-                                bottom = 11.dp,
-                            ),
-                    )
+                        }
+                    }
+                    item {
+                        Column {
+                            Spacer(Modifier.height(6.dp))
+                            HorizontalDivider(color = colors.separator)
+                            Spacer(Modifier.height(6.dp))
+                        }
+                    }
+                }
+                if (ui.toc.isNotEmpty()) {
+                    item {
+                        Text(
+                            "目录",
+                            color = colors.text,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(start = 24.dp, bottom = 8.dp),
+                        )
+                    }
+                    items(ui.toc) { node ->
+                        Text(
+                            text = node.label,
+                            color = if (node.depth == 0) colors.text else colors.textSecondary,
+                            fontSize = if (node.depth == 0) 15.sp else 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showToc = false
+                                    node.href?.let { href ->
+                                        webView.evaluateJavascript(
+                                            "window.lumen.goToHref(${JSONObject.quote(href)})",
+                                            null,
+                                        )
+                                    }
+                                }
+                                .padding(
+                                    start = 24.dp + (node.depth * 16).dp,
+                                    end = 24.dp,
+                                    top = 11.dp,
+                                    bottom = 11.dp,
+                                ),
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+/**
+ * 书签图标：material-icons-core 里没有 Bookmark，引 extended 又会把 APK 撑大十几 MB，
+ * 索性用一条路径自己画——描边是「没加」，实心是「已加」。
+ */
+private fun BookmarkGlyph(color: Color, filled: Boolean, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val path = Path().apply {
+            moveTo(w * 0.16f, h * 0.04f)
+            lineTo(w * 0.84f, h * 0.04f)
+            lineTo(w * 0.84f, h * 0.96f)
+            lineTo(w * 0.50f, h * 0.72f)
+            lineTo(w * 0.16f, h * 0.96f)
+            close()
+        }
+        drawPath(path, color, style = if (filled) Fill else Stroke(width = h * 0.10f))
     }
 }
 
@@ -576,6 +694,8 @@ private fun ReaderTopBar(
     title: String,
     subtitle: String,
     colors: LumenColors,
+    bookmarked: Boolean,
+    onBookmark: () -> Unit,
     onBack: () -> Unit,
     onToc: () -> Unit,
 ) {
@@ -614,6 +734,13 @@ private fun ReaderTopBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        IconButton(onClick = onBookmark, modifier = Modifier.semantics { contentDescription = if (bookmarked) "取消书签" else "加书签" }) {
+            BookmarkGlyph(
+                color = if (bookmarked) colors.accent else colors.text,
+                filled = bookmarked,
+                modifier = Modifier.size(19.dp),
+            )
         }
         IconButton(onClick = onToc) {
             Icon(

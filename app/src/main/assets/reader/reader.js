@@ -326,6 +326,18 @@ function prev() {
   view.prev().catch(() => {})
 }
 
+/** 跳到书签（CFI）。书签存的是点击那一刻的 CFI，回来时按它定位。 */
+async function goToCfi(cfi) {
+  if (!cfi) return false
+  try {
+    await view.goTo(cfi)
+    return true
+  } catch (e) {
+    stage('书签定位失败', String(e))
+    return false
+  }
+}
+
 // ---- 点击分区：左右翻页，中间呼出工具栏 ----
 let downAt = null
 window.addEventListener('pointerdown', (e) => {
@@ -354,6 +366,7 @@ window.lumen = {
   goToFraction,
   next,
   prev,
+  goToCfi,
 }
 
 bridge('onPageLoad')
