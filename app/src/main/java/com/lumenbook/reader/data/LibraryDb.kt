@@ -85,8 +85,17 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
         )
     }
 
-    fun updateProgress(id: Long, progress: Float, finished: Boolean) {
+    /** 只换封面：coverPath 传 null 表示回到「没有封面，用渐变」的状态。 */
+    fun updateCover(id: Long, coverPath: String?) {
         writableDatabase.update(
+            "books",
+            ContentValues().apply { put("cover_path", coverPath) },
+            "id = ?",
+            arrayOf(id.toString()),
+        )
+    }
+
+    fun updateProgress(id: Long, progress: Float, finished: Boolean) {        writableDatabase.update(
             "books",
             ContentValues().apply {
                 put("progress", progress.coerceIn(0f, 1f))

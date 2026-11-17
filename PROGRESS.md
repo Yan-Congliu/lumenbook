@@ -19,8 +19,8 @@ TXT 转派生 EPUB、MOBI/AZW3 还没验证。
 | 2 | 书库：导入、封面、元数据抠取、重命名、删除、统计、设置、深色主题 | ✅ 代码完成，APK 0.2.0 已出包 |
 | 3 | 阅读内核：WebView + foliate-js 承载 EPUB/FB2/CBZ，TXT 转派生 EPUB | 🟡 EPUB 真机可读（0.3.7）；TXT 已实现（0.4.1，桌面验证通过）；MOBI/AZW3 待验证 |
 | 4 | PDF 阅读（PdfRenderer） | 🟡 代码完成，APK 0.4.0 待真机验收 |
-| 5 | MOBI/AZW3 | ⬜ |
-| 6 | 元数据写回原文件（APP_ONLY / WRITE_BACK 双模式） | ⬜ |
+| 5 | MOBI/AZW3 | 🟡 解析链路已用自造的最小 MOBI 验证（桌面通过），等一本真实样书 |
+| 6 | 元数据写回原文件（APP_ONLY / WRITE_BACK 双模式） | 🟡 EPUB 写回已实现 + 12 个单测通过，APK 0.5.0 待真机验收 |
 | 7 | GitHub Releases 应用内更新 | ⬜ |
 | 8 | 打磨（进度同步、书签、字号行距、背景图） | ⬜ |
 
@@ -134,6 +134,23 @@ ui/reader/TxtReaderScreen.kt  转码期显示进度 → 转完把派生 EPUB 当
 - `scripts/txt_split_proto.py` 是同一套规则的 Python 参考实现，用来在没有真机时验证产出的 EPUB 能不能被 foliate 正确分页（已验证：3 章、目录正确、正文正常排版）。
 - 单测 `app/src/test/java/com/lumenbook/reader/importer/TxtToEpubTest.kt`（7 个用例）覆盖拆章、切块、编码探测、EPUB 结构与 mimetype 顺序；跑法见「怎么跑」。
 - 踩过的坑：开头第一行就是「第一章 xxx」时，旧逻辑要求 `body.isNotEmpty()` 才算标题，结果第一章标题被当成正文吞掉；现在改成「标题行永远优先，缓冲区非空才 flush」。
+
+## 阶段 6：元数据写回（0.5.0）
+
+用户最早就提过：改书名/作者/封面时，可以选择「只改应用里的显示」还是「改原文件」。现在的实现：
+
+```
+ui/library/LibraryScreen.kt   EditBookDialog：书名 / 作者 / 换封面 / 「同时写回文件」开关
+data/LibraryRepository.kt     rename（只改库）、setCover（换封面图）、bytesOf（读用户选的图）
+                              writeBackMeta：备份 → EpubRewriter.rewrite → 改写库 → 尝试同步回源 Uri
+importer/EpubRewriter.kt      OPF 里换 dc:title / dc:creator / 封面；整包重打包，mimetype 仍第一条且 STORED
+```
+
+- 只有 **EPUB** 支持写回；PDF/MOBI/AZW3/FB2/TXT 在对话框里开关是灰的，并写明原因（TXT 甚至会转成派生 EPUB，写回没有意义）。
+- 写回前一定先 `copyTo(filesDir/backup/<id>-<时间戳>.epub)`，写坏了还能捞回来。
+- 私有副本改完后再尝试 `contentResolver.openOutputStream(sourceUri, "wt")` 同步回用户原文件；没有写权限就只改书库副本，并明确告诉用户。
+- 换封面：用户挑的图按 480px 采样解码预览，原图字节存到 `filesDir/covers/custom-<id>.<ext>`；写回时同一份字节塞进 EPUB 包。
+- 单测 `app/src/test/java/com/lumenbook/reader/importer/EpubRewriterTest.kt`（12 个用例，含 5 个写回用例）覆盖：书名/作者写进去、旧值消失、mimetype 仍是首条 STORED、章节正文一字不丢、封面条目与 `cover-image` 声明、空作者删掉 `dc:creator`、重打包后 OPF 仍是合法 XML。
 
 ## 关键决定（为什么这么做）
 

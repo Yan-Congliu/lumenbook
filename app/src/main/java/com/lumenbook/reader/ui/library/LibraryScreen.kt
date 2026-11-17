@@ -1,6 +1,13 @@
 package com.lumenbook.reader.ui.library
 
+import android.content.Context
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,8 +26,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -36,18 +45,24 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -55,7 +70,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumenbook.reader.data.Book
+import com.lumenbook.reader.data.BookFormat
 import com.lumenbook.reader.ui.theme.LocalLumenColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private enum class Filter(val label: String) { RECENT("最近阅读"), ALL("全部书籍"), FINISHED("已读完") }
 
@@ -65,14 +83,14 @@ fun LibraryScreen(
     books: List<Book>,
     onImport: () -> Unit,
     onOpen: (Book) -> Unit,
-    onRename: (Book, String, String?) -> Unit,
+    onEdit: (Book, String, String?, Uri?, Boolean) -> Unit,
     onRemove: (Book, Boolean) -> Unit,
 ) {
     val colors = LocalLumenColors.current
     var filter by remember { mutableStateOf(Filter.RECENT) }
     var menuOpen by remember { mutableStateOf(false) }
     var sheetBook by remember { mutableStateOf<Book?>(null) }
-    var renameBook by remember { mutableStateOf<Book?>(null) }
+    var editBook by remember { mutableStateOf<Book?>(null) }
 
     val shown = when (filter) {
         Filter.RECENT -> books
@@ -187,7 +205,7 @@ fun LibraryScreen(
                     onOpen(book)
                 },
                 onRename = {
-                    refreshKey { sheetBook = null; renameBook = it }
+                    refreshKey { sheetBook = null; editBook = it }
                 },
                 onRemove = { deleteFile ->
                     sheetBook = null
@@ -197,13 +215,13 @@ fun LibraryScreen(
         }
     }
 
-    renameBook?.let { book ->
-        RenameDialog(
+    editBook?.let { book ->
+        EditBookDialog(
             book = book,
-            onDismiss = { renameBook = null },
-            onConfirm = { title, author ->
-                renameBook = null
-                onRename(book, title, author)
+            onDismiss = { editBook = null },
+            onConfirm = { title, author, coverUri, writeBack ->
+                editBook = null
+                onEdit(book, title, author, coverUri, writeBack)
             },
         )
     }
@@ -270,7 +288,7 @@ private fun BookActions(
         )
         HorizontalDivider(color = colors.separator)
         SheetAction("打开", Icons.Filled.PlayArrow, colors.text, onOpen)
-        SheetAction("更改书名和作者", Icons.Filled.Edit, colors.text) { onRename(book) }
+        SheetAction("编辑书籍信息", Icons.Filled.Edit, colors.text) { onRename(book) }
         SheetAction("从书库移除（保留文件）", Icons.Filled.Delete, colors.textSecondary) { onRemove(false) }
         SheetAction("永久删除（含文件）", Icons.Filled.Delete, Color(0xFFB3261E)) { onRemove(true) }
     }
@@ -297,19 +315,72 @@ private fun SheetAction(
 }
 
 @Composable
-private fun RenameDialog(
+private fun EditBookDialog(
     book: Book,
     onDismiss: () -> Unit,
-    onConfirm: (String, String?) -> Unit,
+    onConfirm: (String, String?, Uri?, Boolean) -> Unit,
 ) {
+    val colors = LocalLumenColors.current
+    val context = LocalContext.current
     var title by remember { mutableStateOf(book.title) }
     var author by remember { mutableStateOf(book.author ?: "") }
+    var coverUri by remember { mutableStateOf<Uri?>(null) }
+    var writeBack by remember { mutableStateOf(false) }
+    val canWriteBack = book.format == BookFormat.EPUB
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) coverUri = uri
+    }
+
+    val picked by produceState<ImageBitmap?>(null, coverUri) {
+        value = coverUri?.let { uri ->
+            withContext(Dispatchers.IO) { decodeUriImage(context, uri) }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("更改信息", fontFamily = FontFamily.Serif) },
+        title = { Text("书籍信息", fontFamily = FontFamily.Serif) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val preview = picked
+                    Box(
+                        modifier = Modifier
+                            .width(48.dp)
+                            .aspectRatio(2f / 3f)
+                            .clip(RoundedCornerShape(6.dp)),
+                    ) {
+                        if (preview != null) {
+                            Image(
+                                bitmap = preview,
+                                contentDescription = "新封面",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            BookCover(book, Modifier.fillMaxSize())
+                        }
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text("封面", fontSize = 13.sp, color = colors.text)
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = if (coverUri != null) "已选新封面" else "点右边换一张",
+                            fontSize = 11.sp,
+                            color = colors.textTertiary,
+                        )
+                        TextButton(
+                            onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
+                        ) {
+                            Text(if (coverUri != null) "重新选择" else "选择图片", fontSize = 13.sp)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -318,7 +389,7 @@ private fun RenameDialog(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = author,
                     onValueChange = { author = it },
@@ -326,23 +397,52 @@ private fun RenameDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "只改应用里的显示，不动原文件。",
-                    fontSize = 11.sp,
-                    color = LocalLumenColors.current.textTertiary,
-                )
+
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("同时写回文件", fontSize = 14.sp, color = if (canWriteBack) colors.text else colors.textTertiary)
+                        Text(
+                            text = if (canWriteBack) {
+                                "把书名、作者、封面写进这本 EPUB（会先备份）"
+                            } else {
+                                "只有 EPUB 支持写回，${book.format.label} 只能改应用里的显示"
+                            },
+                            fontSize = 11.sp,
+                            color = colors.textTertiary,
+                        )
+                    }
+                    Switch(
+                        checked = writeBack && canWriteBack,
+                        onCheckedChange = { if (canWriteBack) writeBack = it },
+                        enabled = canWriteBack,
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(title, author.ifBlank { null }) },
+                onClick = { onConfirm(title, author.ifBlank { null }, coverUri, writeBack && canWriteBack) },
                 enabled = title.isNotBlank(),
             ) { Text("保存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
+
+/** 用户挑的封面图：按 480px 采样解码，别把 5000 万像素的图整个读进内存。 */
+private fun decodeUriImage(context: Context, uri: Uri): ImageBitmap? = runCatching {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    while (bounds.outWidth / (sample * 2) >= 480) sample *= 2
+    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+        ?.asImageBitmap()
+}.getOrNull()
 
 /** 原型里那个胶囊分段控件。*/
 @Composable

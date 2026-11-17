@@ -129,8 +129,27 @@ fun LumenAppRoot(
                             scope.launch { container.library.markOpened(book.id) }
                             readingId = book.id
                         },
-                        onRename = { book, title, author ->
-                            scope.launch { container.library.rename(book.id, title, author) }
+                        onEdit = { book, title, author, coverUri, writeBack ->
+                            scope.launch {
+                                container.library.rename(book.id, title, author)
+                                if (coverUri != null) {
+                                    container.library.setCover(book.id, coverUri)
+                                }
+                                if (writeBack) {
+                                    Toast.makeText(context, "正在写回文件…", Toast.LENGTH_SHORT).show()
+                                    val cover = coverUri?.let { uri ->
+                                        container.library.bytesOf(uri)
+                                    }
+                                    val result = container.library.writeBackMeta(
+                                        id = book.id,
+                                        title = title,
+                                        author = author,
+                                        coverBytes = cover?.first,
+                                        coverExt = cover?.second ?: "jpg",
+                                    )
+                                    Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         },
                         onRemove = { book, deleteFile ->
                             scope.launch { container.library.remove(book.id, deleteFile) }
