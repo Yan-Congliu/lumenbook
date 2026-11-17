@@ -1,0 +1,21 @@
+# 忽略：工具链与构建产物（可重下/重建，绝不入库）
+.tooling/
+.gradle/
+build/
+**/build/
+dist/
+captures/
+
+# 本机路径与签名（签名文件必须自己备份好，丢了就断应用内更新链）
+local.properties
+keystore/
+*.jks
+*.keystore
+
+# IDE
+.idea/
+*.iml
+
+# 系统
+.DS_Store
+Thumbs.db

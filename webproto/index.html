@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FAF7F2">
+<title>鎏书 LumenBook · 界面原型</title>
+<style>
+  :root{
+    --bg:#FAF7F2; --ink:#1B1A17; --ink-2:#6E6A63; --ink-3:#9A948B;
+    --line:rgba(0,0,0,.08); --card:#FFFFFF;
+    --accent:#B08A5A;
+    --page:#FDFBF7; --page-ink:#2A2723;
+    --radius:10px;
+    --fs:18px; --lh:1.85; --mx:26px;
+    --bar:rgba(250,247,242,.86);
+  }
+  body.dark{
+    --bg:#171614; --ink:#EDE9E3; --ink-2:#A9A29A; --ink-3:#7A746C;
+    --line:rgba(255,255,255,.10); --card:#232120;
+    --accent:#C9A273;
+    --page:#1D1B19; --page-ink:#CFC9C1;
+    --bar:rgba(23,22,20,.86);
+  }
+  body.sepia{ --bg:#F4EBDD; --page:#FBF3E6; --page-ink:#3B3226; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    margin:0;background:#E8E4DD;color:var(--ink);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    display:flex;justify-content:center;
+  }
+  /* 桌面预览时当成一部手机 */
+  .phone{
+    position:relative;width:100%;max-width:430px;height:100dvh;background:var(--bg);
+    overflow:hidden;display:flex;flex-direction:column;
+    box-shadow:0 0 0 1px rgba(0,0,0,.06),0 20px 60px rgba(0,0,0,.18);
+  }
+  .serif{font-family:"Songti SC","Noto Serif CJK SC","Source Han Serif SC",Georgia,"Times New Roman",serif}
+
+  /* ---------- 书库 ---------- */
+  .lib{flex:1;overflow-y:auto;padding:calc(env(safe-area-inset-top) + 18px) 20px 96px}
+  .lib-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:14px}
+  .lib-title{font-size:30px;line-height:1.1;font-weight:600;letter-spacing:.5px}
+  .icon-btn{
+    width:36px;height:36px;border:0;background:transparent;color:var(--ink);
+    font-size:19px;border-radius:50%;display:grid;place-items:center;cursor:pointer;
+  }
+  .icon-btn:active{background:var(--line)}
+  .seg{
+    display:flex;gap:2px;background:var(--line);border-radius:10px;padding:3px;margin:2px 0 18px;
+  }
+  .seg button{
+    flex:1;border:0;background:transparent;color:var(--ink-2);font-size:13.5px;
+    padding:7px 0;border-radius:8px;cursor:pointer;font-family:inherit;
+  }
+  .seg button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.10)}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 14px}
+  @media (max-width:360px){ .grid{grid-template-columns:repeat(2,1fr)} }
+  .book{cursor:pointer;position:relative;transition:transform .12s}
+  .book:active{transform:scale(.965)}
+  .cover{
+    position:relative;aspect-ratio:2/3;border-radius:5px;overflow:hidden;
+    box-shadow:0 3px 10px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.05);
+    display:flex;flex-direction:column;justify-content:flex-end;padding:10px 9px;
+    color:#fff;isolation:isolate;
+  }
+  .cover::after{
+    content:"";position:absolute;inset:0 auto 0 0;width:7px;
+    background:linear-gradient(90deg,rgba(0,0,0,.28),rgba(0,0,0,0));
+  }
+  .cover .t{font-size:12.5px;line-height:1.3;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.35);
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .cover .a{font-size:9.5px;opacity:.78;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar{height:2px;border-radius:2px;background:var(--line);margin-top:7px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--accent);border-radius:2px}
+  .mtitle{font-size:12px;margin-top:6px;color:var(--ink);line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .mauthor{font-size:11px;color:var(--ink-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .done-dot{position:absolute;top:6px;right:6px;width:16px;height:16px;border-radius:50%;
+    background:rgba(255,255,255,.92);color:#2f7d4f;font-size:10px;display:grid;place-items:center;font-weight:700}
+  .empty{color:var(--ink-3);text-align:center;padding:60px 0;font-size:13px}
+
+  /* 底部导航 */
+  .tabbar{
+    position:absolute;left:0;right:0;bottom:0;height:calc(56px + env(safe-area-inset-bottom));
+    padding-bottom:env(safe-area-inset-bottom);
+    display:flex;background:var(--bar);backdrop-filter:blur(18px);
+    border-top:1px solid var(--line);
+  }
+  .tabbar button{
+    flex:1;border:0;background:transparent;color:var(--ink-3);font-size:10.5px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    font-family:inherit;cursor:pointer;
+  }
+  .tabbar button span.i{font-size:18px;line-height:1}
+  .tabbar button.on{color:var(--accent)}
+
+  /* ---------- 阅读页 ---------- */
+  .reader{
+    position:absolute;inset:0;background:var(--page);color:var(--page-ink);
+    display:none;flex-direction:column;z-index:5;
+  }
+  .reader.open{display:flex}
+  .page{
+    flex:1;overflow-y:auto;padding:calc(env(safe-area-inset-top) + 26px) var(--mx)
+            calc(env(safe-area-inset-bottom) + 40px);
+    font-size:var(--fs);line-height:var(--lh);text-align:justify;
+  }
+  .page h2{font-size:calc(var(--fs) * 1.15);line-height:1.5;margin:0 0 1.2em;font-weight:600}
+  .page p{margin:0 0 .85em;text-indent:2em}
+  .page .hint{text-indent:0;color:var(--ink-3);font-size:12px;text-align:center;margin-top:2em;font-family:system-ui}
+
+  /* 上下悬浮条 */
+  .chrome{
+    position:absolute;inset:0;pointer-events:none;z-index:6;
+    transition:opacity .18s;
+  }
+  .chrome.hidden{opacity:0}
+  .chrome .top,.chrome .bottom{
+    position:absolute;left:0;right:0;pointer-events:auto;
+    background:var(--bar);backdrop-filter:blur(18px);
+  }
+  .chrome .top{
+    top:0;padding:calc(env(safe-area-inset-top) + 8px) 12px 10px;
+    display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line);
+  }
+  .chrome .bottom{
+    bottom:0;padding:10px 16px calc(env(safe-area-inset-bottom) + 12px);
+    border-top:1px solid var(--line);display:flex;align-items:center;gap:14px;
+  }
+  .chrome .btitle{flex:1;text-align:center;font-size:13.5px;color:var(--ink);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .slider{flex:1;-webkit-appearance:none;height:3px;border-radius:3px;background:var(--line)}
+  .slider::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  .pg{font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums;min-width:52px;text-align:right}
+
+  /* 抽屉 */
+  .sheet{
+    position:absolute;left:0;right:0;bottom:0;z-index:10;background:var(--card);
+    border-radius:16px 16px 0 0;padding:16px 20px calc(env(safe-area-inset-bottom) + 18px);
+    transform:translateY(105%);transition:transform .24s cubic-bezier(.2,.8,.2,1);
+    box-shadow:0 -8px 30px rgba(0,0,0,.18);color:var(--ink);
+  }
+  .sheet.open{transform:translateY(0)}
+  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.28);z-index:9;opacity:0;pointer-events:none;transition:opacity .2s}
+  .scrim.open{opacity:1;pointer-events:auto}
+  .sheet h3{margin:0 0 14px;font-size:14px;font-weight:600}
+  .row{display:flex;align-items:center;gap:12px;margin-bottom:14px;font-size:13px;color:var(--ink-2)}
+  .row label{width:52px;flex:none}
+  .row input[type=range]{flex:1;-webkit-appearance:none;height:3px;border-radius:3px;background:var(--line)}
+  .row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;
+    border-radius:50%;background:var(--accent)}
+  .themes{display:flex;gap:14px}
+  .sw{width:44px;height:44px;border-radius:50%;border:2px solid transparent;cursor:pointer}
+  .sw.on{border-color:var(--accent)}
+  .sw.light{background:#FAF7F2;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+  .sw.sepia{background:#F4EBDD}
+  .sw.dark{background:#1B1A18}
+  .actions .item{
+    display:flex;align-items:center;gap:12px;padding:13px 4px;font-size:14.5px;
+    border-bottom:1px solid var(--line);cursor:pointer;color:var(--ink);
+  }
+  .actions .item:last-child{border-bottom:0;color:#C0392B}
+  .actions .item i{font-style:normal;font-size:17px;width:22px;text-align:center;opacity:.8}
+  .toast{
+    position:absolute;left:50%;bottom:88px;transform:translate(-50%,10px);
+    background:rgba(28,27,25,.92);color:#fff;font-size:12.5px;padding:9px 16px;border-radius:20px;
+    opacity:0;pointer-events:none;transition:all .2s;z-index:20;white-space:nowrap;
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+
+  /* 截图模式：铺满，不留手机外框 */
+  body.shot{background:var(--bg)}
+  body.shot .phone{max-width:none;box-shadow:none}
+</style>
+</head>
+<body>
+<div class="phone" id="phone">
+
+  <!-- ============ 书库 ============ -->
+  <div class="lib" id="lib">
+    <div class="lib-head">
+      <div class="lib-title serif">书库</div>
+      <button class="icon-btn" onclick="toast('导入：安卓用系统文件选择器（SAF）')">⋯</button>
+    </div>
+
+    <div class="seg" id="seg">
+      <button class="on">最近阅读</button>
+      <button>全部书籍</button>
+      <button>已读完</button>
+    </div>
+
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <div class="tabbar">
+    <button class="on" onclick="toast('书库')"><span class="i">▤</span>书库</button>
+    <button onclick="toast('阅读统计（阶段 8 再做）')"><span class="i">◔</span>统计</button>
+    <button onclick="toast('设置：主题 / 排版 / 更新')"><span class="i">⚙</span>设置</button>
+  </div>
+
+  <!-- ============ 阅读页 ============ -->
+  <div class="reader" id="reader">
+    <div class="page serif" id="page">
+      <h2 id="rtitle">第一章　雪夜</h2>
+      <p>雪落下来的声音是听得见的——不是雪本身，而是屋檐、枯枝、以及远处某扇没有关严的窗，在承受重量时发出的那种极轻的、几乎算得上温柔的响动。</p>
+      <p>他坐在窗边，手里翻着一本旧书。书页已经泛黄，边角卷起，油墨的味道淡得需要凑近才闻得到。像这样的冬夜，最适合读一点不着急读完的东西。</p>
+      <p>楼下有人在烧水，壶盖被顶得嗒嗒作响。水汽顺着楼梯爬上来，混进房间里冷而干燥的空气里，于是整个屋子都变得有了一点暖意。</p>
+      <p>“还没睡？”门口传来一句话，很轻，像是不太确定该不该继续说下去。</p>
+      <p>“嗯。”他合上书，没有抬头。“把灯开着吧，我想再坐一会儿。”</p>
+      <p>来人站着没动，过了一会儿才说：“明天还要早起。”</p>
+      <p>“我知道。”</p>
+      <p>窗外的雪越下越密，把那盏路灯裹进一团温柔的白里。书被放回膝上，页码停在原来的地方——他忽然觉得，这本书不必着急读完，就像这个夜晚也不必着急结束。</p>
+      <p class="hint">（这是排版原型，文字是占位的）</p>
+      <p class="hint">点一下屏幕中央可以呼出/隐藏上下工具条</p>
+    </div>
+
+    <div class="chrome hidden" id="chrome">
+      <div class="top">
+        <button class="icon-btn" onclick="closeReader()">‹</button>
+        <div class="btitle" id="cTitle">夜读</div>
+        <button class="icon-btn" onclick="toast('目录')">☰</button>
+        <button class="icon-btn" onclick="toast('更多：书签 / 搜索 / 详情')">⋯</button>
+      </div>
+      <div class="bottom">
+        <button class="icon-btn" onclick="openSheet('settings')">Aa</button>
+        <input class="slider" type="range" min="0" max="100" value="34" id="prog">
+        <div class="pg"><span id="pgNow">12</span> / 340</div>
+        <button class="icon-btn" onclick="toast('已加入书签')">⌑</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 抽屉：排版设置 ============ -->
+  <div class="scrim" id="scrim" onclick="closeSheet()"></div>
+  <div class="sheet" id="sheetSettings">
+    <h3>排版</h3>
+    <div class="row"><label>字号</label><input type="range" id="fs" min="14" max="26" step="1" value="18"></div>
+    <div class="row"><label>行距</label><input type="range" id="lh" min="140" max="230" step="5" value="185"></div>
+    <div class="row"><label>边距</label><input type="range" id="mx" min="12" max="48" step="2" value="26"></div>
+    <div class="row" style="margin-top:18px"><label>主题</label>
+      <div class="themes">
+        <div class="sw light on" data-theme="light"></div>
+        <div class="sw sepia" data-theme="sepia"></div>
+        <div class="sw dark" data-theme="dark"></div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:6px;color:var(--ink-3);font-size:11.5px">
+      翻页：滑动（可在设置里改成无动画 / 滚动）
+    </div>
+  </div>
+
+  <!-- ============ 抽屉：长按菜单 ============ -->
+  <div class="sheet" id="sheetActions">
+    <h3 id="actTitle">书籍</h3>
+    <div class="actions">
+      <div class="item" onclick="act('查看详情')"><i>ⓘ</i>查看详情</div>
+      <div class="item" onclick="act('重命名 / 改作者 / 换封面')"><i>✎</i>编辑信息</div>
+      <div class="item" onclick="act('标记为已读完')"><i>✓</i>标记为已读完</div>
+      <div class="item" onclick="act('分享')"><i>↗</i>分享</div>
+      <div class="item" onclick="act('删除（会先问你）')"><i>🗑</i>删除</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+/* ---------- 假书数据（封面用渐变，不依赖图片） ---------- */
+const BOOKS = [
+  {t:"夜航西飞", a:"柏瑞尔·马卡姆", c:["#3A4A6B","#1B2233"], p:34, d:false},
+  {t:"雪国", a:"川端康成", c:["#8FA6B8","#4A5C6B"], p:72, d:false},
+  {t:"围城", a:"钱锺书", c:["#9C5A3C","#5A2E1C"], p:100, d:true},
+  {t:"活着", a:"余华", c:["#C9A227","#7A5E10"], p:58, d:false},
+  {t:"海边的卡夫卡", a:"村上春树", c:["#2F6E6A","#123B39"], p:12, d:false},
+  {t:"我们仨", a:"杨绛", c:["#E0D6C3","#B3A385"], p:88, d:false},
+  {t:"百年孤独", a:"加西亚·马尔克斯", c:["#6B4A7A","#33203D"], p:5, d:false},
+  {t:"诗经", a:"佚名", c:["#7A8450","#3E4626"], p:100, d:true},
+  {t:"时间简史", a:"史蒂芬·霍金", c:["#1F3A5F","#0B1622"], p:23, d:false},
+  {t:"人间词话", a:"王国维", c:["#B4432F","#6B2116"], p:61, d:false},
+  {t:"苏东坡传", a:"林语堂", c:["#4E6E58","#243A2A"], p:0, d:false},
+  {t:"局外人", a:"加缪", c:["#8C8577","#4A453B"], p:41, d:false},
+];
+const grid = document.getElementById('grid');
+let pressTimer = null, pressedBook = null;
+
+function renderBooks(){
+  grid.innerHTML = BOOKS.map((b,i)=>`
+    <div class="book" data-i="${i}">
+      <div class="cover" style="background:linear-gradient(150deg,${b.c[0]},${b.c[1]})">
+        <div class="t serif">${b.t}</div>
+        <div class="a">${b.a}</div>
+        ${b.d?'<div class="done-dot">✓</div>':''}
+      </div>
+      <div class="bar"><i style="width:${b.p}%"></i></div>
+      <div class="mtitle">${b.t}</div>
+      <div class="mauthor">${b.a}</div>
+    </div>`).join('');
+  grid.querySelectorAll('.book').forEach(el=>{
+    const i = +el.dataset.i;
+    el.addEventListener('pointerdown', ()=>{ pressedBook = i;
+      pressTimer = setTimeout(()=>{ pressTimer=null; openActions(i); }, 480); });
+    ['pointerup','pointerleave','pointercancel'].forEach(ev=>
+      el.addEventListener(ev, ()=>{ clearTimeout(pressTimer); pressTimer=null; }));
+    el.addEventListener('click', ()=>{
+      if (pressTimer === null && document.getElementById('sheetActions').classList.contains('open')) return;
+      openReader(i);
+    });
+  });
+}
+renderBooks();
+
+/* ---------- 阅读器 ---------- */
+const reader = document.getElementById('reader');
+const chrome = document.getElementById('chrome');
+function openReader(i){
+  const b = BOOKS[i];
+  document.getElementById('cTitle').textContent = b.t;
+  document.getElementById('rtitle').textContent = '第一章　' + (b.t.length>3?'风起':'雪夜');
+  document.getElementById('pgNow').textContent = Math.max(1, Math.round(b.p*3.4));
+  document.getElementById('prog').value = b.p;
+  reader.classList.add('open');
+  chrome.classList.add('hidden');
+  document.getElementById('page').scrollTop = 0;
+}
+function closeReader(){ reader.classList.remove('open'); closeSheet(); }
+
+/* 点中间切换工具条 */
+document.getElementById('page').addEventListener('click', ()=>{
+  chrome.classList.toggle('hidden');
+});
+
+/* ---------- 抽屉 ---------- */
+const scrim = document.getElementById('scrim');
+function openSheet(which){
+  closeSheet(true);
+  if (which === 'settings') document.getElementById('sheetSettings').classList.add('open');
+  scrim.classList.add('open');
+}
+function closeSheet(keepScrim){
+  document.getElementById('sheetSettings').classList.remove('open');
+  document.getElementById('sheetActions').classList.remove('open');
+  if (!keepScrim) scrim.classList.remove('open');
+}
+let actBook = null;
+function openActions(i){
+  actBook = i;
+  document.getElementById('actTitle').textContent = BOOKS[i].t;
+  document.getElementById('sheetActions').classList.add('open');
+  scrim.classList.add('open');
+}
+function act(what){
+  closeSheet();
+  setTimeout(()=>toast(what + ' （原型里只做提示）'), 180);
+}
+
+/* ---------- 排版实时生效 ---------- */
+const root = document.documentElement;
+document.getElementById('fs').oninput = e => root.style.setProperty('--fs', e.target.value+'px');
+document.getElementById('lh').oninput = e => root.style.setProperty('--lh', (e.target.value/100));
+document.getElementById('mx').oninput = e => root.style.setProperty('--mx', e.target.value+'px');
+document.querySelectorAll('.sw').forEach(sw=>{
+  sw.onclick = ()=>{
+    document.querySelectorAll('.sw').forEach(s=>s.classList.remove('on'));
+    sw.classList.add('on');
+    document.body.classList.remove('dark','sepia');
+    if (sw.dataset.theme !== 'light') document.body.classList.add(sw.dataset.theme);
+  };
+});
+
+/* ---------- 提示 ---------- */
+const tEl = document.getElementById('toast');
+let tTimer;
+function toast(msg){
+  tEl.textContent = msg; tEl.classList.add('show');
+  clearTimeout(tTimer); tTimer = setTimeout(()=>tEl.classList.remove('show'), 1800);
+}
+
+/* Esc 关抽屉，方便电脑上预览 */
+document.addEventListener('keydown', e=>{
+  if (e.key === 'Escape'){ closeSheet(); } 
+});
+
+/* 预览辅助：?view=reader 直接进阅读页，?view=settings 打开排版抽屉 */
+const params = new URLSearchParams(location.search);
+const q = params.get('view');
+if (params.has('shot')) document.body.classList.add('shot');
+if (q === 'reader'){ openReader(0); chrome.classList.remove('hidden'); }
+if (q === 'settings'){ openReader(0); chrome.classList.remove('hidden'); openSheet('settings'); }
+if (q === 'actions'){ openActions(1); }
+</script>
+</body>
+</html>
