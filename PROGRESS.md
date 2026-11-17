@@ -243,11 +243,33 @@ assets/reader/reader.js     window.lumen.goToCfi(cfi) → view.goTo(cfi)
 
 桌面验证：`goToCfi` 从第三章跳回 `epubcfi(/6/4!/4/2,,/10/1:6)`，fraction 0.661、章节回到「第二章 灯下」。
 
+## 阶段 8 夜间进展（0.6.2 / 0.6.3 / 0.6.4）
+
+用户睡前说「这个显示还是有问题，你先做，我睡了，你尽可能多做一些」——于是把不依赖真机的打磨项做完：
+
+```
+设置 → 页面背景           data/BackgroundStore.kt（采样 1600px、压 JPEG 88、只留一张）
+                          设置里三行：纸张 / 自定义背景图（换一张）/ 清除
+                          铺在所有页最底层（LumenBackground.Image，压暗 0.30 保证文字可读）
+书库搜索 + 排序           LibraryScreen：标题栏放大镜 + OutlinedTextField 过滤书名/作者
+                          ⋯ 菜单里四档排序：最近阅读 / 书名 / 作者 / 加入时间
+CBZ / FB2 验证            scripts/make_test_misc.py 自造样书，桌面全部跑通
+发布脚本                  scripts/release_gh.mjs（Node，走 API 建 release + 传 APK）
+                          python scripts/build_apk.py --release --publish 一步到位
+```
+
+- **CBZ 本来就是坏的**：foliate 的 `fixed-layout.js` 第一行是裸 import `construct-style-sheets-polyfill`，
+  WebView 里解析不了 → `scripts/vendor_polyfill.py` 把它从 npm 拉下来放进 `vendor/foliate/vendor/` 并改成相对路径。
+  教训：vendor 第三方库时**必须把所有裸模块名都换成本地文件**，浏览器只在真跑的时候才暴露。
+- 已发 **v0.6.3 Release**（https://github.com/Yan-Congliu/lumenbook/releases/tag/v0.6.3），资产 `lumenbook-0.6.3-arm64-v8a.apk`，
+  应用内更新的链路这就算真正闭环了。
+- PDF 目录做不了：`PdfRenderer` 不暴露 outline/bookmark 树，要做得引 PDFium 或另写 PDF 解析，先记着。
+
 ## 下一步
 
-1. 用户验收 0.6.1：正文是否从顶栏下方开始（insets 修好了）、书签按钮/列表、PDF 上的书签。
-2. 发一个 GitHub Release（需要用户点头），资产名必须是 `lumenbook-<ver>-arm64-v8a.apk`，之后应用内更新才能真的走通。
-3. 正式版包名是 `com.lumenbook.reader`（debug 是 `com.lumenbook.reader.debug`，是另一个应用）：用户要从 debug 切到 release，得手动装一次 `dist/lumenbook-0.6.0-arm64-v8a.apk`，之后才能靠应用内更新升级。
-4. MOBI/AZW3 用真实样书验证（自造样书已确认解析链路可用）。
-5. 阶段 8 剩下的：背景图接入（`LumenBackground.Image` 接口已留、设置里那一行还置灰）、PDF 目录、书库搜索/排序。
+1. 用户验收 0.6.3/0.6.4：正文起始位置、书签、设置里的背景图、书库搜索排序、CBZ 漫画。
+2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.4-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
+3. MOBI/AZW3 用真实样书验证（自造样书已确认解析链路可用）。
+4. 阶段 8 剩下：PDF 目录（需要换 PDF 解析库）、按标签/系列分组、阅读页页码（foliate 只给百分比）。
+
 

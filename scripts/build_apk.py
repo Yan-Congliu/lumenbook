@@ -106,6 +106,8 @@ def main() -> int:
     ap.add_argument("--release", action="store_true")
     ap.add_argument("--clean", action="store_true")
     ap.add_argument("--task", default=None, help="直接指定 gradle 任务，如 assembleDebug")
+    ap.add_argument("--publish", action="store_true", help="release 出包后顺带发到 GitHub Release")
+    ap.add_argument("--notes", default=None, help="配合 --publish：release notes（用 \\n 换行）")
     a = ap.parse_args()
 
     env = ensure_env()
@@ -144,6 +146,21 @@ def main() -> int:
         print(f"[build] APK: {d}  ({d.stat().st_size / 2**20:.1f} MB)")
     if variant == "debug":
         print("[build] 注意：debug 包带 .debug 后缀的包名，正式更新用 release 包。")
+
+    if a.publish:
+        if variant != "release":
+            fail("--publish 只对 release 包有意义（加 --release）")
+        apk = results[0]
+        notes = a.notes or "见仓库提交记录。"
+        cmd = [
+            "node", str(WS / "scripts" / "release_gh.mjs"),
+            "--version", ver,
+            "--apk", str(apk),
+            "--notes", notes.replace("\n", "\\n"),
+        ]
+        print(f"\n[build] 发 Release v{ver} …", flush=True)
+        if subprocess.run(cmd, cwd=WS).returncode != 0:
+            fail("发 Release 失败（APK 已出，可稍后单独跑 scripts/release_gh.mjs）")
     return 0
 
 

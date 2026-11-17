@@ -32,8 +32,8 @@ android {
         applicationId = "com.lumenbook.reader"
         minSdk = 26
         targetSdk = 37
-        versionCode = 19
-        versionName = "0.6.3"
+        versionCode = 20
+        versionName = "0.6.4"
     }
 
     buildTypes {
