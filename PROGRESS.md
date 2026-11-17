@@ -121,6 +121,15 @@ app/src/main/java/com/lumenbook/reader/ui/reader/ReaderScreen.kt
 - 本机 **没有连接安卓设备**（`adb devices` 为空），所以 UI 只能靠编译 + 原型截图自检，真机验证必须找用户。
 - Python 的 urllib 在这台机器上发 POST 会 `SSL: UNEXPECTED_EOF_WHILE_READING`（GET 正常）；Node 的 fetch 正常。
   所以 `gh_push.mjs` 用 Node 写，不用 Python。
+- **`addJavascriptInterface` 暴露的类必须是 public**：Kotlin 顶层 `private class` 编译成 package-private，
+  `android.webkit` 跨包反射会抛 `IllegalAccessException`，表现是「JS 明明调了，App 一点反应都没有」，
+  桌面浏览器测不出来（没有 Android 对象），只能靠真机。`ReaderBridge` 现在是 public class + 回调函数。
+  用 `javap -cp app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes com.lumenbook.reader.ui.reader.ReaderBridge`
+  看第一行是 `public final class` 才算对。
+- **真机上看不到日志**：阅读页自带看门狗（9 秒没 ready 就在屏幕上写「卡在哪一步」）+ JS 的
+  `window.onerror`/`unhandledrejection` 都会通过桥回报并显示，不要瞎猜。
+- 打开书有两条路径：JS 的 `onPageLoad` 回调，和 WebView 的 `onPageFinished` 里兜底 `evaluateJavascript`。
+  后者不依赖 JS 桥，桥挂了也还能打开书（只是收不到进度回调）。
 - **foliate 的 `setStyles()` 必须在 `view.init()` 之后调**：渲染器的文档和 style 槽位那时才建好，
   早调只会被存起来然后丢掉，表现是「字号/纸色全没生效」但没有任何报错。
 - **foliate 把 `--_gap`/`--_margin`/`--_max-inline-size` 写死在 closed shadow 的 `#top` 上**，

@@ -1,7 +1,6 @@
 package com.lumenbook.reader.ui.reader
 
 import android.annotation.SuppressLint
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -68,6 +67,7 @@ import com.lumenbook.reader.data.AppContainer
 import com.lumenbook.reader.data.Book
 import com.lumenbook.reader.data.BookFormat
 import com.lumenbook.reader.ui.theme.LumenColors
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -81,8 +81,9 @@ private const val ASSET_DOMAIN = "appassets.androidplatform.net"
 /** 目录里的一项，depth 用于缩进。 */
 data class TocNode(val label: String, val href: String?, val depth: Int)
 
-/** 阅读页的 UI 状态。JS 桥在 WebView 线程回调，统一 post 到主线程再写。 */
+/** 阅读页的 UI 状态。JS 桥在 WebView 线程回调，桥内部已 post 到主线程。 */
 private class ReaderUi {
+    var booted by mutableStateOf(false)
     var pageLoaded by mutableStateOf(false)
     var ready by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
@@ -117,9 +118,24 @@ private fun themeJson(colors: LumenColors): String = JSONObject().apply {
     put("accent", colors.accent.hex())
     put("fontSize", 19)
     put("lineHeight", 1.85)
-    put("margin", 40)
+    put("margin", 36)
     put("justify", true)
 }.toString()
+
+private fun parseToc(json: String?): List<TocNode> {
+    val obj = runCatching { JSONObject(json ?: "{}") }.getOrDefault(JSONObject())
+    val out = mutableListOf<TocNode>()
+    val arr = obj.optJSONArray("toc") ?: return out
+    for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        out += TocNode(
+            label = o.optString("label", "(无标题)"),
+            href = o.optString("href", "").ifBlank { null },
+            depth = o.optInt("depth", 0),
+        )
+    }
+    return out
+}
 
 /** 把书库里的私有副本作为 /book/ 路径喂给网页（同源，免 CORS）。 */
 private class BookFileHandler(
@@ -130,8 +146,11 @@ private class BookFileHandler(
         if (!file.isFile) {
             return WebResourceResponse(
                 "text/plain",
-                "utf-8",
-                ByteArrayInputStream("书文件不见了".toByteArray()),
+                null,
+                404,
+                "Not Found",
+                mapOf("Cache-Control" to "no-store"),
+                ByteArrayInputStream("missing".toByteArray()),
             )
         }
         val stream: InputStream = FileInputStream(file)
@@ -146,62 +165,52 @@ private class BookFileHandler(
     }
 }
 
-/** JS 侧的 Android 对象。 */
-private class ReaderBridge(
-    private val ui: ReaderUi,
+/**
+ * JS 侧的 Android 对象。
+ *
+ * 必须是 public 类：`addJavascriptInterface` 靠反射调用，Kotlin 顶层 `private class`
+ * 会编译成 package-private，android.webkit 跨包反射会抛 IllegalAccessException，
+ * 表现就是「JS 明明调了，App 一点反应都没有」。真机上踩过一次。
+ *
+ * 回调参数一律在桥里 post 到主线程，调用方可以直接改 Compose 状态。
+ */
+class ReaderBridge(
     private val main: Handler,
-    private val onLocation: (String?, Float) -> Unit,
+    private val booted: () -> Unit,
+    private val loaded: () -> Unit,
+    private val ready: (String?) -> Unit,
+    private val relocated: (String?, String?) -> Unit,
+    private val failed: (String?) -> Unit,
+    private val toggled: () -> Unit,
 ) {
     @JavascriptInterface
+    fun onBoot() {
+        main.post { booted() }
+    }
+
+    @JavascriptInterface
     fun onPageLoad() {
-        main.post { ui.pageLoaded = true }
+        main.post { loaded() }
     }
 
     @JavascriptInterface
     fun onReady(json: String?) {
-        val obj = runCatching { JSONObject(json ?: "{}") }.getOrDefault(JSONObject())
-        val toc = mutableListOf<TocNode>()
-        val arr = obj.optJSONArray("toc")
-        if (arr != null) {
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                toc += TocNode(
-                    label = o.optString("label", "(无标题)"),
-                    href = o.optString("href", "").ifBlank { null },
-                    depth = o.optInt("depth", 0),
-                )
-            }
-        }
-        val fraction = obj.optDouble("fraction", 0.0).toFloat()
-        main.post {
-            ui.ready = true
-            ui.error = null
-            ui.toc = toc
-            if (fraction > 0f) ui.fraction = fraction
-        }
+        main.post { ready(json) }
     }
 
     @JavascriptInterface
     fun onRelocate(cfi: String?, json: String?) {
-        val obj = runCatching { JSONObject(json ?: "{}") }.getOrDefault(JSONObject())
-        val fraction = obj.optDouble("fraction", 0.0).toFloat().coerceIn(0f, 1f)
-        val label = obj.optString("label", "")
-        main.post {
-            ui.fraction = fraction
-            ui.cfi = cfi
-            if (label.isNotBlank()) ui.chapter = label
-        }
-        onLocation(cfi, fraction)
+        main.post { relocated(cfi, json) }
     }
 
     @JavascriptInterface
     fun onError(message: String?) {
-        main.post { ui.error = message ?: "打开失败" }
+        main.post { failed(message) }
     }
 
     @JavascriptInterface
     fun onToggleChrome() {
-        main.post { ui.chromeVisible = !ui.chromeVisible }
+        main.post { toggled() }
     }
 
     @JavascriptInterface
@@ -216,7 +225,7 @@ private fun buildReaderWebView(
     loader: WebViewAssetLoader,
     bridge: ReaderBridge,
     background: Int,
-    onFinish: (WebView, String) -> Unit,
+    onPageFinished: (WebView) -> Unit,
 ): WebView = WebView(context).apply {
     setBackgroundColor(background)
     settings.javaScriptEnabled = true
@@ -244,7 +253,17 @@ private fun buildReaderWebView(
             request: WebResourceRequest,
         ): Boolean = request.url.host != ASSET_DOMAIN
 
-        override fun onPageFinished(view: WebView, url: String) = onFinish(view, url)
+        override fun onReceivedError(
+            view: WebView,
+            request: WebResourceRequest,
+            error: android.webkit.WebResourceError,
+        ) {
+            if (BuildConfig.DEBUG) {
+                android.util.Log.w("LumenReader", "资源加载失败 ${request.url} ${error.description}")
+            }
+        }
+
+        override fun onPageFinished(view: WebView, url: String) = onPageFinished(view)
     }
     addJavascriptInterface(bridge, "Android")
     loadUrl("https://$ASSET_DOMAIN/assets/reader/index.html")
@@ -273,8 +292,8 @@ fun ReaderScreen(
     }
     var showToc by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) }
+    var lastError by remember { mutableStateOf<String?>(null) }
     val lastSaveAt = remember { longArrayOf(0L) }
-
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     val assetLoader = remember(book.localPath) {
@@ -286,13 +305,37 @@ fun ReaderScreen(
     }
 
     val bridge = remember(book.id) {
-        ReaderBridge(ui, mainHandler) { cfi, fraction ->
-            val now = System.currentTimeMillis()
-            if (now - lastSaveAt[0] > 2_000L) {
-                lastSaveAt[0] = now
-                scope.launch { container.library.saveLocation(book.id, cfi, fraction) }
-            }
-        }
+        ReaderBridge(
+            main = mainHandler,
+            booted = { ui.booted = true },
+            loaded = { ui.pageLoaded = true },
+            ready = { json ->
+                val obj = runCatching { JSONObject(json ?: "{}") }.getOrDefault(JSONObject())
+                ui.toc = parseToc(json)
+                val fraction = obj.optDouble("fraction", 0.0).toFloat()
+                if (fraction > 0f) ui.fraction = fraction
+                ui.ready = true
+                ui.error = null
+            },
+            relocated = { cfi, json ->
+                val obj = runCatching { JSONObject(json ?: "{}") }.getOrDefault(JSONObject())
+                val fraction = obj.optDouble("fraction", 0.0).toFloat().coerceIn(0f, 1f)
+                val label = obj.optString("label", "")
+                ui.fraction = fraction
+                ui.cfi = cfi
+                if (label.isNotBlank()) ui.chapter = label
+                val now = System.currentTimeMillis()
+                if (now - lastSaveAt[0] > 2_000L) {
+                    lastSaveAt[0] = now
+                    scope.launch { container.library.saveLocation(book.id, cfi, fraction) }
+                }
+            },
+            failed = { message ->
+                lastError = message ?: "未知错误"
+                if (!ui.ready) ui.error = message ?: "打开失败"
+            },
+            toggled = { ui.chromeVisible = !ui.chromeVisible },
+        )
     }
 
     val openScript = remember(book.id) {
@@ -300,12 +343,10 @@ fun ReaderScreen(
         "window.lumen.open(${JSONObject.quote(url)}, ${JSONObject.quote(book.location ?: "")}, ${themeJson(colors)})"
     }
 
-    /** 退出阅读页前的收尾：落库最后位置，并销毁 WebView。 */
+    /** 退出阅读页前的收尾：落库最后位置。 */
     val finish = {
-        val cfi = ui.cfi
-        val fraction = ui.fraction
         if (ui.ready) {
-            scope.launch { container.library.saveLocation(book.id, cfi, fraction) }
+            scope.launch { container.library.saveLocation(book.id, ui.cfi, ui.fraction) }
         }
         onClose()
     }
@@ -316,12 +357,13 @@ fun ReaderScreen(
             loader = assetLoader,
             bridge = bridge,
             background = colors.page.toArgb(),
-            onFinish = { view, _ ->
-                // 兜底：万一 onPageLoad 没到（脚本报错时），这里再催一次
-                view.evaluateJavascript(
-                    "window.lumen ? 1 : 0",
-                    null,
-                )
+            onPageFinished = { view ->
+                // 兜底：即使 JS 桥没连上（收不到 onPageLoad），也主动把书推给页面。
+                // evaluateJavascript 不依赖 addJavascriptInterface。
+                if (!opened) {
+                    opened = true
+                    view.evaluateJavascript(openScript, null)
+                }
             },
         )
     }
@@ -339,6 +381,18 @@ fun ReaderScreen(
             opened = true
             webView.evaluateJavascript(openScript, null)
         }
+    }
+
+    // 看门狗：真机上看不到日志，所以把「卡在哪一步」直接写在屏幕上。
+    LaunchedEffect(book.id) {
+        delay(9_000)
+        if (ui.ready) return@LaunchedEffect
+        val stage = when {
+            !ui.booted -> "页面脚本没能启动（Android 桥没连上）"
+            !ui.pageLoaded -> "脚本启动了，但没通知页面就绪"
+            else -> "书打不开：${lastError ?: "没有任何回调（可能是解析失败或超时）"}"
+        }
+        ui.error = stage
     }
 
     BackHandler {
@@ -380,11 +434,19 @@ fun ReaderScreen(
                 Modifier.fillMaxSize().background(colors.page),
                 contentAlignment = Alignment.Center,
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(horizontal = 32.dp),
+                ) {
                     Text("打不开这本书", color = colors.text, fontSize = 16.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text(message, color = colors.textTertiary, fontSize = 13.sp)
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        message,
+                        color = colors.textTertiary,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                    )
+                    Spacer(Modifier.height(18.dp))
                     TextButton(onClick = { finish() }) { Text("返回书库", color = colors.accent) }
                 }
             }

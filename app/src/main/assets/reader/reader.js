@@ -28,6 +28,18 @@ function bridge(method, ...args) {
   }
 }
 
+// 页面一跑起来就报个到：Kotlin 那边据此判断「是 JS 没起来，还是书打不开」。
+bridge('onBoot')
+
+// 未捕获的错误也往上报，真机上没有控制台，只能靠 App 显示。
+window.addEventListener('error', (e) => {
+  bridge('onError', 'JS 错误: ' + (e.message || e.error || 'unknown'))
+})
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason
+  bridge('onError', 'JS 异常: ' + ((r && r.message) || r || 'unknown'))
+})
+
 /** foliate 的渲染器在 closed shadow root 里，只能靠 setStyles 注入字体/颜色。 */
 function contentCss() {
   const j = style.justify ? 'justify' : 'start'
