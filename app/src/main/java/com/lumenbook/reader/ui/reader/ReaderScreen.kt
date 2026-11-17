@@ -117,9 +117,11 @@ private fun themeJson(colors: LumenColors): String = JSONObject().apply {
     put("paper", colors.page.hex())
     put("ink", colors.text.hex())
     put("accent", colors.accent.hex())
-    put("fontSize", 19)
-    put("lineHeight", 1.85)
-    put("margin", 36)
+    // 字号 18 / 行距 1.8 是手机上接近 Books 的观感：360dp 宽约 18~19 个字一行
+    put("fontSize", 18)
+    put("lineHeight", 1.8)
+    put("margin", 32)
+    put("gap", 10)
     put("justify", true)
 }.toString()
 
@@ -242,6 +244,9 @@ private fun buildReaderWebView(
     settings.setSupportZoom(false)
     settings.builtInZoomControls = false
     settings.displayZoomControls = false
+    // 关掉 WebView 的「文字自动放大」：安卓会按容器宽度把字号悄悄放大，
+    // 之前 18px 被放成 21.28px，一行只剩 12 个字。
+    settings.textZoom = 100
     settings.mediaPlaybackRequiresUserGesture = true
     settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
     isVerticalScrollBarEnabled = false

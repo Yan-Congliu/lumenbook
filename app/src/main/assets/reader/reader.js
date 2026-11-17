@@ -7,14 +7,18 @@ const view = document.getElementById('view')
 const splash = document.getElementById('splash')
 
 /** 当前排版参数，Kotlin 打开书时传进来，改字号/主题会再传一次。 */
+/** 诊断卡只在调试时显示：在地址后面加 ?diag=1（平时不打扰阅读）。 */
+const DIAG = new URLSearchParams(location.search).has('diag')
+
 let style = {
   paper: '#F7F4EF',
   ink: '#1A1917',
   accent: '#A9764D',
-  fontSize: 19,
-  lineHeight: 1.85,
+  fontSize: 18,
+  lineHeight: 1.8,
   fontFamily: '"Noto Serif CJK SC", "Source Han Serif SC", Songti SC, serif',
-  margin: 40,
+  margin: 32,
+  gap: 10,
   justify: true,
 }
 
@@ -62,6 +66,8 @@ function contentCss() {
     html, body {
       background: ${style.paper} !important;
       color: ${style.ink} !important;
+      -webkit-text-size-adjust: 100% !important;
+      text-size-adjust: 100% !important;
     }
     body {
       font-family: ${style.fontFamily} !important;
@@ -229,7 +235,7 @@ async function open(url, cfi, themeJson) {
       fraction: lastReported.fraction < 0 ? 0 : lastReported.fraction,
     }
     bridge('onReady', JSON.stringify(payload))
-    showDiagnostics()
+    if (DIAG) showDiagnostics()
   } catch (e) {
     console.error(e)
     const msg = String(e?.message || e)

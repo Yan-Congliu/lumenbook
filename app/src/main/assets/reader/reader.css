@@ -11,6 +11,10 @@ html, body {
   background: var(--paper);
   color: var(--ink);
   -webkit-tap-highlight-color: transparent;
+  /* 安卓 WebView 默认会按容器宽度自动放大正文（font boosting），
+     字号会莫名其妙变大、一行字数变少，这里关掉。 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 foliate-view {
