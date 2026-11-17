@@ -40,6 +40,20 @@ window.addEventListener('unhandledrejection', (e) => {
   bridge('onError', 'JS 异常: ' + ((r && r.message) || r || 'unknown'))
 })
 
+/** 兜底：安卓 WebView 有时先给 0 高度再放大，这里按视口把书页尺寸直接钉死，
+ *  不让排版去依赖 html/body 的百分比高度链。 */
+function syncViewSize() {
+  const w = window.innerWidth || document.documentElement.clientWidth || 0
+  const h = window.innerHeight || document.documentElement.clientHeight || 0
+  if (w > 0) view.style.width = w + 'px'
+  if (h > 0) view.style.height = h + 'px'
+  return { w, h }
+}
+
+syncViewSize()
+window.addEventListener('resize', syncViewSize)
+window.addEventListener('orientationchange', () => setTimeout(syncViewSize, 300))
+
 /** foliate 的渲染器在 closed shadow root 里，只能靠 setStyles 注入字体/颜色。 */
 function contentCss() {
   const j = style.justify ? 'justify' : 'start'
@@ -148,6 +162,7 @@ function withTimeout(promise, ms, label) {
 
 async function open(url, cfi, themeJson) {
   stage('开始打开')
+  syncViewSize()
   applyTheme(themeJson)
   try {
     stage('下载书文件')
@@ -196,6 +211,9 @@ async function open(url, cfi, themeJson) {
     // 样式必须在 init 之后发：渲染器的文档和 style 槽位这时候才建好，
     // 早发的 setStyles 只会被存起来然后被丢掉（踩过）。
     applyTheme()
+    // 若这时 WebView 的尺寸和排版时不一致（安卓会先 0 后放大），再钉一次，
+    // 渲染器的 ResizeObserver 会跟着重排。
+    syncViewSize()
     stage('完成')
 
     splash.classList.add('hidden')
@@ -257,6 +275,13 @@ function showDiagnostics() {
       whiteSpace: 'normal', wordBreak: 'break-all',
     })
     document.body.append(strip)
+    // 这是临时诊断条：没有异常就自己淡出，免得挡住正文
+    const suspicious = box.height < 50 || ((doc?.body?.innerText || '').trim().length === 0)
+    setTimeout(() => {
+      strip.style.transition = 'opacity .4s'
+      strip.style.opacity = '0'
+      setTimeout(() => strip.remove(), 500)
+    }, suspicious ? 30000 : 8000)
   } catch (e) {
     console.error('diagnostics', e)
   }
