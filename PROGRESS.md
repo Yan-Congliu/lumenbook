@@ -1,7 +1,7 @@
 # PROGRESS — 鎏书 LumenBook
 
 > 收尾必写。给下一个会话的 agent 看：做到哪了、怎么跑、哪块是坑。
-> 最近更新：2026-11-18 00:16（阶段 4 PDF 阅读写完，0.4.0 出包待真机验收）
+> 最近更新：2026-11-18 00:45（阶段 6 元数据写回、阶段 7 应用内更新 + 发布签名，0.6.0 出包）
 
 ## 一句话状态
 
@@ -21,7 +21,7 @@ TXT 转派生 EPUB、MOBI/AZW3 还没验证。
 | 4 | PDF 阅读（PdfRenderer） | 🟡 代码完成，APK 0.4.0 待真机验收 |
 | 5 | MOBI/AZW3 | 🟡 解析链路已用自造的最小 MOBI 验证（桌面通过），等一本真实样书 |
 | 6 | 元数据写回原文件（APP_ONLY / WRITE_BACK 双模式） | 🟡 EPUB 写回已实现 + 12 个单测通过，APK 0.5.0 待真机验收 |
-| 7 | GitHub Releases 应用内更新 | ⬜ |
+| 7 | GitHub Releases 应用内更新 | 🟡 检查/下载/安装链路 + 6 个单测通过；release 签名已配好（0.6.0） |
 | 8 | 打磨（进度同步、书签、字号行距、背景图） | ⬜ |
 
 ## 怎么跑
@@ -152,6 +152,16 @@ importer/EpubRewriter.kt      OPF 里换 dc:title / dc:creator / 封面；整包
 - 换封面：用户挑的图按 480px 采样解码预览，原图字节存到 `filesDir/covers/custom-<id>.<ext>`；写回时同一份字节塞进 EPUB 包。
 - 单测 `app/src/test/java/com/lumenbook/reader/importer/EpubRewriterTest.kt`（12 个用例，含 5 个写回用例）覆盖：书名/作者写进去、旧值消失、mimetype 仍是首条 STORED、章节正文一字不丢、封面条目与 `cover-image` 声明、空作者删掉 `dc:creator`、重打包后 OPF 仍是合法 XML。
 
+## 阶段 7：应用内更新（0.6.0）
+
+- `data/UpdateChecker.kt`：`GET https://api.github.com/repos/Yan-Congliu/lumenbook/releases/latest`（8s 超时），`parse(json, currentVersion)` 选资产（优先 `-arm64-v8a.apk`，退任意 `.apk`），`normalize()` 把 `v0.6.0` / `0.6.0-debug` / `0.6.0 (16)` 削成 `0.6.0`，`compare()` 按段比数字。仓库没发过版本时返回「仓库还没有发布过版本」。
+- `data/ApkInstaller.kt`：`canInstall` / `openInstallPermission`（跳「安装未知应用」开关）/ `download`（下到 `filesDir/updates/`，先写 `.part`，带进度）/ `install`（FileProvider + `ACTION_VIEW`）。
+- 权限只加了 `INTERNET` + `REQUEST_INSTALL_PACKAGES`；`res/xml/file_paths.xml` 只暴露 `updates/`。
+- 设置页「更新」分区：检查 → 弹出 release notes → 显示下载进度 → 拉起系统安装。
+- **发布签名**：`python scripts/make_keystore.py` 生成 `keystore/lumenbook.jks` + `keystore.properties`（随机密码，已 gitignore）；`app/build.gradle.kts` 在文件存在时自动给 release 配 signingConfig。
+- 出包：debug `python scripts/build_apk.py`，发布 `python scripts/build_apk.py --release` → `dist/lumenbook-<ver>-arm64-v8a.apk`（8.9 MB，包名 `com.lumenbook.reader`，V2 签名）。
+- **坑**：Kotlin DSL 里写 `java.util.Properties()` 会被解析成 `JavaPluginExtension`，必须 `import java.util.Properties` 后用 `Properties()`。
+
 ## 关键决定（为什么这么做）
 
 - **不用 Room**：AGP 9 内置 Kotlin 2.2.10 后 KSP 版本匹配是额外风险，单表用 SQLiteOpenHelper 够用。
@@ -217,7 +227,8 @@ importer/EpubRewriter.kt      OPF 里换 dc:title / dc:creator / 封面；整包
 
 ## 下一步
 
-1. 用户验收 0.4.0 的 PDF 阅读（翻页手感、双指缩放、进度记忆、从第几页接着读）。
-2. TXT：`scripts/txt_split_proto.py` 做编码探测 + 拆章，产出小 EPUB 走同一引擎；MOBI/AZW3 用真实样书验证。
-3. 阶段 6 元数据写回（APP_ONLY / WRITE_BACK），阶段 7 应用内更新（GitHub Releases + 资产名 `lumenbook-<ver>-arm64-v8a.apk`）。
-4. PDF 后续可加：双页/横向阅读、目录（Outline）、文字选择（暂不做）。
+1. 用户验收 0.6.0：PDF 翻页手感 / TXT 拆章 / 长按「编辑书籍信息」+ 勾选「同时写回文件」/ 设置里的「检查更新」。
+2. 发一个 GitHub Release（需要用户点头），资产名必须是 `lumenbook-<ver>-arm64-v8a.apk`，之后应用内更新才能真的走通。
+3. 正式版包名是 `com.lumenbook.reader`（debug 是 `com.lumenbook.reader.debug`，是另一个应用）：用户要从 debug 切到 release，得手动装一次 `dist/lumenbook-0.6.0-arm64-v8a.apk`，之后才能靠应用内更新升级。
+4. MOBI/AZW3 用真实样书验证（自造样书已确认解析链路可用）。
+5. 阶段 8 打磨：书签、背景图（`LumenBackground` 接口已留）、PDF 目录。
