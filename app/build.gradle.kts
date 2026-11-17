@@ -1,19 +1,39 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+// 发布签名：keystore/keystore.properties 由 scripts/make_keystore.py 生成（不入库）
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore/keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val hasReleaseKey = keystoreProps.getProperty("storeFile") != null
 
 android {
     namespace = "com.lumenbook.reader"
     compileSdk = 37
     buildToolsVersion = "37.0.0"
 
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.lumenbook.reader"
         minSdk = 26
         targetSdk = 37
-        versionCode = 15
-        versionName = "0.5.0"
+        versionCode = 16
+        versionName = "0.6.0"
     }
 
     buildTypes {
@@ -24,6 +44,7 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (hasReleaseKey) signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -49,4 +70,6 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.webkit)
     testImplementation("junit:junit:4.13.2")
+    // 单元测试跑在 JVM 上，android.jar 里的 org.json 是空壳，得补一份真实现
+    testImplementation("org.json:json:20240303")
 }

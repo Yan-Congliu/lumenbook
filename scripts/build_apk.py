@@ -110,6 +110,8 @@ def main() -> int:
 
     env = ensure_env()
     variant = "release" if a.release else "debug"
+    if a.release and not (WS / "keystore" / "keystore.properties").exists():
+        fail("没有发布签名。先跑 `python scripts/make_keystore.py`（只需一次），再回来构建 release。")
     tasks = [a.task] if a.task else [("assembleRelease" if a.release else "assembleDebug")]
     if a.clean:
         tasks.insert(0, "clean")
@@ -130,7 +132,11 @@ def main() -> int:
     ver = version_name()
     results = []
     for apk in apks:
-        dest = DIST / f"lumenbook-{ver}-{variant}-{stamp}.apk"
+        if variant == "release":
+            # 发布包按 AGENTS.md 的命名固定：应用内更新按这个名字匹配 asset
+            dest = DIST / f"lumenbook-{ver}-arm64-v8a.apk"
+        else:
+            dest = DIST / f"lumenbook-{ver}-{variant}-{stamp}.apk"
         shutil.copy2(apk, dest)
         results.append(dest)
     print(f"\n[build] ✓ 耗时 {time.time() - t0:.0f}s")
