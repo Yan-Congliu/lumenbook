@@ -110,12 +110,37 @@ function onRelocate(detail) {
   }
 }
 
+/** 阶段日志：真机上没有控制台，卡在哪一步只能靠这个显示在屏幕上。 */
+function stage(name, extra) {
+  bridge('onStage', extra ? `${name} · ${extra}` : name)
+}
+
+/** 给可能永远不 resolve 的 Promise 加个超时，避免页面永远停在「正在翻开」。 */
+function withTimeout(promise, ms, label) {
+  let timer = 0
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} 超时（${ms / 1000}s）`)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
 async function open(url, cfi, themeJson) {
+  stage('开始打开')
   applyTheme(themeJson)
   try {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`加载失败：${res.status}`)
+    stage('下载书文件')
+    const controller = new AbortController()
+    const abortTimer = setTimeout(() => controller.abort(), 15000)
+    let res
+    try {
+      res = await fetch(url, { signal: controller.signal })
+    } finally {
+      clearTimeout(abortTimer)
+    }
+    if (!res.ok) throw new Error(`加载失败：HTTP ${res.status}`)
+    stage('读取内容')
     const blob = await res.blob()
+    stage('文件就绪', `${Math.round(blob.size / 1024)} KB`)
     const name = url.split('/').pop() || 'book.epub'
     const file = new File([blob], name)
 
@@ -138,11 +163,18 @@ async function open(url, cfi, themeJson) {
       }
     })
 
-    await view.open(file)
-    await view.init({ lastLocation: cfi || undefined, showTextStart: !cfi })
+    stage('解析书结构')
+    await withTimeout(view.open(file), 20000, '解析书结构')
+    stage('排版')
+    await withTimeout(
+      view.init({ lastLocation: cfi || undefined, showTextStart: !cfi }),
+      20000,
+      '排版',
+    )
     // 样式必须在 init 之后发：渲染器的文档和 style 槽位这时候才建好，
     // 早发的 setStyles 只会被存起来然后被丢掉（踩过）。
     applyTheme()
+    stage('完成')
 
     splash.classList.add('hidden')
     await new Promise((r) => setTimeout(r, 200))

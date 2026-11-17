@@ -87,6 +87,7 @@ private class ReaderUi {
     var pageLoaded by mutableStateOf(false)
     var ready by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
+    var stage by mutableStateOf("")
     var fraction by mutableStateOf(0f)
     var chapter by mutableStateOf("")
     var toc by mutableStateOf<List<TocNode>>(emptyList())
@@ -178,6 +179,7 @@ class ReaderBridge(
     private val main: Handler,
     private val booted: () -> Unit,
     private val loaded: () -> Unit,
+    private val staged: (String?) -> Unit,
     private val ready: (String?) -> Unit,
     private val relocated: (String?, String?) -> Unit,
     private val failed: (String?) -> Unit,
@@ -191,6 +193,11 @@ class ReaderBridge(
     @JavascriptInterface
     fun onPageLoad() {
         main.post { loaded() }
+    }
+
+    @JavascriptInterface
+    fun onStage(message: String?) {
+        main.post { staged(message) }
     }
 
     @JavascriptInterface
@@ -309,6 +316,7 @@ fun ReaderScreen(
             main = mainHandler,
             booted = { ui.booted = true },
             loaded = { ui.pageLoaded = true },
+            staged = { message -> ui.stage = message ?: "" },
             ready = { json ->
                 val obj = runCatching { JSONObject(json ?: "{}") }.getOrDefault(JSONObject())
                 ui.toc = parseToc(json)
@@ -387,10 +395,11 @@ fun ReaderScreen(
     LaunchedEffect(book.id) {
         delay(9_000)
         if (ui.ready) return@LaunchedEffect
+        val where = if (ui.stage.isNotBlank()) "卡在「${ui.stage}」" else "没有任何阶段回调"
         val stage = when {
             !ui.booted -> "页面脚本没能启动（Android 桥没连上）"
             !ui.pageLoaded -> "脚本启动了，但没通知页面就绪"
-            else -> "书打不开：${lastError ?: "没有任何回调（可能是解析失败或超时）"}"
+            else -> "书打不开：$where${lastError?.let { "，$it" } ?: ""}"
         }
         ui.error = stage
     }
@@ -425,7 +434,13 @@ fun ReaderScreen(
 
         if (!ui.ready && ui.error == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("正在翻开…", color = colors.textTertiary, fontSize = 14.sp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("正在翻开…", color = colors.textTertiary, fontSize = 14.sp)
+                    if (ui.stage.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(ui.stage, color = colors.textTertiary.copy(alpha = 0.7f), fontSize = 11.sp)
+                    }
+                }
             }
         }
 
