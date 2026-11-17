@@ -32,7 +32,10 @@ python scripts\vendor_foliate.py       # 把 foliate-js 放进 assets（阶段 3
 
 - 工具链全在 `.tooling/`（gitignore，不进仓库）。`build_apk.py` 会设好 `JAVA_HOME` / `ANDROID_HOME` / `GRADLE_USER_HOME` / `TMP`，**不要裸跑 gradle**。
 - 仓库：https://github.com/Yan-Congliu/lumenbook （public）。remote 用 https + token。
-- 推 GitHub：`git push` 的进度走 stderr，PowerShell 里可能显示 exit 1，实际是成功的，看 `git log origin/main` 确认。
+- **推 GitHub 首选 `git push`；连不上时用 `node scripts/gh_push.mjs`**（走 api.github.com + Git Data API）。
+  这台机器上 github.com:443 经常被 reset（`Recv failure` / `Empty reply`），而 api.github.com 一直通。
+  API 建出来的提交时间会被规范成 UTC，sha 与本地不同，脚本用 `.git/lumenbook-sync.json` 记 `远端sha -> 本地sha` 映射；
+  因此 `git status` 可能一直显示 ahead 1，属正常——以远端页面和脚本输出为准。
 
 ## 阶段 2 做了什么（代码地图）
 
@@ -92,6 +95,8 @@ app/src/main/java/com/lumenbook/reader/
   `systemProp.java.io.tmpdir` 指到 `.tooling/tmp`，并设 `TMP`/`TEMP` 环境变量（已在 `build_apk.py` 里）。
 - Edge headless 截图窗口最小宽度约 500px，用 `--window-size=520,1040`（430 会右侧被裁）。
 - 本机 **没有连接安卓设备**（`adb devices` 为空），所以 UI 只能靠编译 + 原型截图自检，真机验证必须找用户。
+- Python 的 urllib 在这台机器上发 POST 会 `SSL: UNEXPECTED_EOF_WHILE_READING`（GET 正常）；Node 的 fetch 正常。
+  所以 `gh_push.mjs` 用 Node 写，不用 Python。
 
 ## 下一步（阶段 3）
 
