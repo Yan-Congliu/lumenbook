@@ -272,6 +272,8 @@ class View {
                         vh: this.container?.clientHeight ?? -1,
                         iw: this.#iframe.clientWidth,
                         ih: this.#iframe.clientHeight,
+                        ew: Math.round(this.element?.getBoundingClientRect?.().width ?? -1),
+                        eh: Math.round(this.element?.getBoundingClientRect?.().height ?? -1),
                         text: (doc.body.textContent || '').trim().length,
                     })
                     const { vertical, rtl } = getDirection(doc)

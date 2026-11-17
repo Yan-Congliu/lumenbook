@@ -222,7 +222,7 @@ async function open(url, cfi, themeJson) {
   }
 }
 
-// 真机上没有控制台，也没法远程调试：把关键尺寸和计算结果画在页面底部一条细带里，
+// 真机上没有控制台，也没法远程调试：把关键尺寸和计算结果画在屏幕中间，
 // 出问题让用户截个图就能定位（定位完会去掉）。
 function showDiagnostics() {
   try {
@@ -230,22 +230,31 @@ function showDiagnostics() {
     strip.id = 'lumen-diag'
     const content = (view.renderer?.getContents?.() || [])[0]
     const doc = content?.doc
-    const cs = doc ? doc.defaultView.getComputedStyle(doc.body) : null
+    const win = doc?.defaultView
+    const cs = win ? win.getComputedStyle(doc.body) : null
+    const de = win ? win.getComputedStyle(doc.documentElement) : null
+    const bodyRect = doc?.body?.getBoundingClientRect?.()
     const box = view.getBoundingClientRect()
     const parts = [
       `视口 ${window.innerWidth}x${window.innerHeight}`,
       `书页 ${Math.round(box.width)}x${Math.round(box.height)}`,
-      `正文 ${(doc?.body?.innerText || '').replace(/\s/g, '').length} 字`,
-      cs ? `${cs.color}／${cs.backgroundColor}` : '无文档',
-      debugTail(4),
+      `正文 ${((doc?.body?.innerText || '').replace(/\s/g, '')).length}字`,
+      cs ? `字色${cs.color} 底${cs.backgroundColor} 字号${cs.fontSize}` : '无文档',
+      bodyRect
+        ? `body ${Math.round(bodyRect.width)}x${Math.round(bodyRect.height)} @${Math.round(bodyRect.left)},${Math.round(bodyRect.top)}`
+        : '',
+      de ? `列宽${de.columnWidth} 列数${de.columnCount} 高${de.height}` : '',
+      `滚动 ${doc?.documentElement?.scrollWidth}x${doc?.documentElement?.scrollHeight}`,
+      debugTail(3),
     ].filter(Boolean)
     strip.textContent = parts.join(' · ')
     Object.assign(strip.style, {
-      position: 'fixed', left: '0', right: '0', bottom: '0',
-      padding: '3px 6px', font: '9px/1.4 ui-monospace, monospace',
-      color: '#8a7f72', background: 'rgba(255,255,255,.8)',
-      zIndex: 99, whiteSpace: 'nowrap', overflow: 'hidden',
-      textOverflow: 'ellipsis', pointerEvents: 'none',
+      position: 'fixed', left: '6px', right: '6px', top: '34%',
+      padding: '5px 7px', font: '10px/1.5 ui-monospace, monospace',
+      color: '#111', background: 'rgba(255,255,255,.95)',
+      border: '1px solid rgba(0,0,0,.2)', borderRadius: '4px',
+      zIndex: 2147483000, pointerEvents: 'none',
+      whiteSpace: 'normal', wordBreak: 'break-all',
     })
     document.body.append(strip)
   } catch (e) {
@@ -253,7 +262,8 @@ function showDiagnostics() {
   }
 }
 
-function goToHref(href) {  view.goTo(href).catch((e) => console.error('goTo', e))
+function goToHref(href) {
+  view.goTo(href).catch((e) => console.error('goTo', e))
 }
 
 function goToFraction(frac) {
