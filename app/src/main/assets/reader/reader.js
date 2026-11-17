@@ -115,6 +115,28 @@ function stage(name, extra) {
   bridge('onStage', extra ? `${name} · ${extra}` : name)
 }
 
+// 排版在 foliate 的 closed shadow 里，外面看不见；vendor 补丁会把每一步抛成
+// composed 的 lumen-debug 事件，这里攒着，出错时一起显示，免得再来回猜。
+let debugLog = []
+document.addEventListener('lumen-debug', (e) => {
+  const d = e.detail || {}
+  debugLog.push(d)
+  if (debugLog.length > 8) debugLog.shift()
+})
+
+function debugTail(n = 3) {
+  return debugLog
+    .slice(-n)
+    .map((d) => {
+      const extra = Object.entries(d)
+        .filter(([k]) => k !== 'stage')
+        .map(([k, v]) => `${k}=${v}`)
+        .join(' ')
+      return extra ? `${d.stage}(${extra})` : d.stage
+    })
+    .join(' → ')
+}
+
 /** 给可能永远不 resolve 的 Promise 加个超时，避免页面永远停在「正在翻开」。 */
 function withTimeout(promise, ms, label) {
   let timer = 0
@@ -191,8 +213,11 @@ async function open(url, cfi, themeJson) {
     bridge('onReady', JSON.stringify(payload))
   } catch (e) {
     console.error(e)
-    splash.textContent = String(e?.message || e)
-    bridge('onError', String(e?.message || e))
+    const msg = String(e?.message || e)
+    const tail = debugTail()
+    const full = tail ? `${msg}｜排版：${tail}` : msg
+    splash.textContent = full
+    bridge('onError', full)
   }
 }
 

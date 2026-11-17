@@ -242,36 +242,74 @@ class View {
     }
     async load(src, afterLoad, beforeRender) {
         if (typeof src !== 'string') throw new Error(`${src} is not string`)
-        return new Promise(resolve => {
+        // LUMENBOOK PATCH: srcdoc + 调试事件
+        // ① 安卓 WebView 里 blob: 的 iframe 常常等不到 load 事件（桌面正常），
+        //    所以把 blob 抓成文本改用 srcdoc，等价内容、不依赖 blob 导航。
+        // ② 排版在 closed shadow 里，出问题外面看不见；这里把每一步抛出 composed 事件，
+        //    reader.js 收下来，真机卡住时能显示卡在哪个动作。
+        const dbg = (stage, extra) => {
+            try {
+                this.dispatchEvent(new CustomEvent('lumen-debug', {
+                    detail: { stage, ...extra }, bubbles: true, composed: true,
+                }))
+            } catch {}
+        }
+        const started = globalThis.performance?.now?.() ?? 0
+        const elapsed = () => Math.round((globalThis.performance?.now?.() ?? 0) - started)
+        return new Promise((resolve, reject) => {
             this.#iframe.addEventListener('load', () => {
-                const doc = this.document
-                afterLoad?.(doc)
+                dbg('iframe-load', { ms: elapsed() })
+                try {
+                    const doc = this.document
+                    if (!doc?.body) throw new Error('iframe 空白，没有 body')
+                    afterLoad?.(doc)
 
-                // it needs to be visible for Firefox to get computed style
-                this.#iframe.style.display = 'block'
-                const { vertical, rtl } = getDirection(doc)
-                this.docBackground = getBackground(doc)
-                doc.body.style.background = 'none'
-                const background = this.docBackground
-                this.#iframe.style.display = 'none'
+                    // it needs to be visible for Firefox to get computed style
+                    this.#iframe.style.display = 'block'
+                    const { vertical, rtl } = getDirection(doc)
+                    this.docBackground = getBackground(doc)
+                    doc.body.style.background = 'none'
+                    const background = this.docBackground
+                    this.#iframe.style.display = 'none'
 
-                this.#vertical = vertical
-                this.#rtl = rtl
+                    this.#vertical = vertical
+                    this.#rtl = rtl
 
-                this.#contentRange.selectNodeContents(doc.body)
-                const layout = beforeRender?.({ vertical, rtl, background })
-                this.#iframe.style.display = 'block'
-                this.render(layout)
-                this.#observer.observe(doc.body)
+                    this.#contentRange.selectNodeContents(doc.body)
+                    const layout = beforeRender?.({ vertical, rtl, background })
+                    this.#iframe.style.display = 'block'
+                    this.render(layout)
+                    this.#observer.observe(doc.body)
 
-                // the resize observer above doesn't work in Firefox
-                // (see https://bugzilla.mozilla.org/show_bug.cgi?id=1832939)
-                // until the bug is fixed we can at least account for font load
-                doc.fonts.ready.then(() => this.expand())
+                    // the resize observer above doesn't work in Firefox
+                    // (see https://bugzilla.mozilla.org/show_bug.cgi?id=1832939)
+                    // until the bug is fixed we can at least account for font load
+                    doc.fonts.ready.then(() => this.expand())
 
-                resolve()
+                    dbg('render-done', { ms: elapsed() })
+                    resolve()
+                } catch (e) {
+                    dbg('render-error', { message: String(e?.message ?? e) })
+                    reject(e)
+                }
             }, { once: true })
-            this.#iframe.src = src
+            if (src.startsWith('blob:')) {
+                dbg('srcdoc-start', {})
+                fetch(src).then(r => r.text()).then(text => {
+                    dbg('srcdoc-ready', { chars: text.length })
+                    this.#iframe.srcdoc = text
+                }).catch(e => {
+                    dbg('srcdoc-fail', { message: String(e?.message ?? e) })
+                    this.#iframe.src = src
+                })
+            } else {
+                dbg('iframe-src', { scheme: src.slice(0, 6) })
+                this.#iframe.src = src
+            }
+            setTimeout(() => dbg('iframe-wait', {
+                ms: elapsed(),
+                body: !!this.#iframe.contentDocument?.body,
+            }), 4000)
         })
     }
     render(layout) {
