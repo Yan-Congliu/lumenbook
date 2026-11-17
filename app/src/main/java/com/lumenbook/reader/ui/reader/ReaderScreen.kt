@@ -72,6 +72,7 @@ import com.lumenbook.reader.data.AppContainer
 import com.lumenbook.reader.data.Book
 import com.lumenbook.reader.data.BookFormat
 import com.lumenbook.reader.data.ReaderStyle
+import com.lumenbook.reader.ui.pdf.PdfReaderScreen
 import com.lumenbook.reader.ui.theme.LumenColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -295,6 +296,10 @@ fun ReaderScreen(
     colors: LumenColors,
     onClose: () -> Unit,
 ) {
+    if (book.format == BookFormat.PDF) {
+        PdfReaderScreen(book, container, colors, onClose)
+        return
+    }
     if (!book.format.usesFoliate()) {
         UnsupportedFormatScreen(book, colors, onClose)
         return

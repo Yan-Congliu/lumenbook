@@ -1,13 +1,14 @@
 # PROGRESS — 鎏书 LumenBook
 
 > 收尾必写。给下一个会话的 agent 看：做到哪了、怎么跑、哪块是坑。
-> 最近更新：2026-11-18 00:00（EPUB 真机可读，0.3.7 调完排版手感）
+> 最近更新：2026-11-18 00:16（阶段 4 PDF 阅读写完，0.4.0 出包待真机验收）
 
 ## 一句话状态
 
-阶段 0/2/3(EPUB) 已在真机跑通：书卡点开 → WebView + foliate-js 分页排版、左右翻页、目录跳转、进度（CFI）落库、深浅两套主题。
+阶段 0/2/3(EPUB) 已在真机跑通：书卡点开 → WebView + foliate-js 分页排版、左右翻页、目录跳转、进度（CFI）落库、深浅两套主题、字号/行距/边距面板。
 真机上踩穿了三个坑（JS 接口类必须 public、paginator 的 blob iframe 在安卓不触发 load、书页容器高度算成 0），现已稳定。
-TXT 转派生 EPUB、MOBI/AZW3 还没验证；PDF 是阶段 4（用户最常用 PDF + EPUB）。
+阶段 4 PDF 阅读已写完（原生 PdfRenderer + HorizontalPager + 缩放 + 进度记忆），APK 0.4.0 等真机确认；
+TXT 转派生 EPUB、MOBI/AZW3 还没验证。
 
 ## 阶段表
 
@@ -17,7 +18,7 @@ TXT 转派生 EPUB、MOBI/AZW3 还没验证；PDF 是阶段 4（用户最常用 
 | 1 | HTML 原型（书库/阅读页/设置/操作面板）→ `webproto/index.html` | ✅ 完成，截图在 `dist/proto-*.png` |
 | 2 | 书库：导入、封面、元数据抠取、重命名、删除、统计、设置、深色主题 | ✅ 代码完成，APK 0.2.0 已出包 |
 | 3 | 阅读内核：WebView + foliate-js 承载 EPUB/FB2/CBZ，TXT 转派生 EPUB | 🟡 EPUB 真机可读（0.3.7）；TXT/MOBI/AZW3 待验证 |
-| 4 | PDF 阅读（PdfRenderer） | ⬜ |
+| 4 | PDF 阅读（PdfRenderer） | 🟡 代码完成，APK 0.4.0 待真机验收 |
 | 5 | MOBI/AZW3 | ⬜ |
 | 6 | 元数据写回原文件（APP_ONLY / WRITE_BACK 双模式） | ⬜ |
 | 7 | GitHub Releases 应用内更新 | ⬜ |
@@ -86,6 +87,25 @@ app/src/main/java/com/lumenbook/reader/ui/reader/ReaderScreen.kt
 - 打开流程：JS `bridge('onPageLoad')` → Kotlin 收到 `ui.pageLoaded` → `window.lumen.open(url, cfi, theme)` → JS 里 `makeBook → view.open → view.init({lastLocation}) → applyTheme()` → 回调 `onReady`（目录 + fraction）→ 每页 `onRelocate(cfi, {fraction,label})` → Kotlin 节流 2 秒写库 `books.location`（DB VERSION=2，`ALTER TABLE books ADD COLUMN location TEXT`）。
 - 书库点书 → `AppRoot.readingId` → `ReaderScreen`，返回时 `refresh()` 让进度/最近阅读即时更新。
 
+## 阶段 4 做了什么（PDF 阅读）
+
+`ui/pdf/PdfReaderScreen.kt`（新建，约 400 行）：
+
+```
+PdfDocument(file)          ParcelFileDescriptor + PdfRenderer，Mutex 串行渲染（PdfRenderer 非线程安全）
+  render(index, widthPx)   suspend + Dispatchers.IO → RGB_565 白底 Bitmap，按视口宽度缩放
+PdfReaderScreen            BookFormat.PDF 时由 ReaderScreen 直接转进来
+  rememberPagerState(initialPage = savedPage(book.location))   // location = "page:N"
+  HorizontalPager(beyondViewportPageCount = 1)                  // 预渲染左右各一页
+  PdfPage                   单页 Bitmap + detectTransformGestures 双指缩放（1..4 倍）+ detectTapZones
+  PdfTopBar / PdfBottomBar  书名 + 「页码 / 总页数」，底部滑条按页跳转
+  翻页落库                  snapshotFlow { pagerState.settledPage } → saveLocation("page:N", N/(count-1))
+```
+
+- 轻点分区：左 30% 上一页、右 30% 下一页、中间呼出/隐藏工具栏（放大到 >1.01 倍后轻点只收起工具栏，避免和拖动打架）。
+- `ReaderScreen` 顶部改成先判 PDF：`if (book.format == BookFormat.PDF) { PdfReaderScreen(...); return }`。
+- 测试用 PDF：`python scripts/make_test_pdf.py -o dist/test-pdf.pdf --pages 4`（手拼 PDF 语法，纯 ASCII，不依赖第三方库），Edge 里确认 4 页能正常渲染。
+
 ## 关键决定（为什么这么做）
 
 - **不用 Room**：AGP 9 内置 Kotlin 2.2.10 后 KSP 版本匹配是额外风险，单表用 SQLiteOpenHelper 够用。
@@ -151,8 +171,7 @@ app/src/main/java/com/lumenbook/reader/ui/reader/ReaderScreen.kt
 
 ## 下一步
 
-1. 用户验收 0.3.7 排版手感（18px / 1.8 行距 / 32 边距，一行约 18 字）。
-2. 阅读设置面板：字号、行距、页边距、纸张/墨色，改完直接 `applyTheme` 重排（接口已经在了）。
-3. 阶段 4 PDF（PdfRenderer + 双指缩放 + 单页/双页），用户最常用 PDF。
-4. TXT：`scripts/txt_split_proto.py` 做编码探测 + 拆章，产出小 EPUB 走同一引擎；MOBI/AZW3 用真实样书验证。
-5. 阶段 7 应用内更新（GitHub Releases + 检查 `latest` 资产名 `lumenbook-<ver>-arm64-v8a.apk`）。
+1. 用户验收 0.4.0 的 PDF 阅读（翻页手感、双指缩放、进度记忆、从第几页接着读）。
+2. TXT：`scripts/txt_split_proto.py` 做编码探测 + 拆章，产出小 EPUB 走同一引擎；MOBI/AZW3 用真实样书验证。
+3. 阶段 6 元数据写回（APP_ONLY / WRITE_BACK），阶段 7 应用内更新（GitHub Releases + 资产名 `lumenbook-<ver>-arm64-v8a.apk`）。
+4. PDF 后续可加：双页/横向阅读、目录（Outline）、文字选择（暂不做）。
