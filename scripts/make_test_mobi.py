@@ -49,17 +49,51 @@ RECORD_SIZE = 4096
 MOBI_HEADER_LENGTH = 232
 
 
-def build_text() -> bytes:
-    """拼成 MOBI6 认的 HTML：章节之间用 <mbp:pagebreak/> 分节。"""
-    parts = ["<html><head><guide></guide></head><body>"]
-    for index, (title, paragraphs) in enumerate(CHAPTERS):
-        if index:
-            parts.append("<mbp:pagebreak/>")
+def build_text(chapter_offsets: list[int], toc_offset: int) -> bytes:
+    """拼成 MOBI6 认的 HTML。
+
+    - 第一章前面插一个「目录」节，里面用 `<a filepos="字节偏移">` 指到各章，
+      这是 MOBI6 唯一的目录形态（foliate 靠 guide → 目录页 → a[filepos] 还原 toc）。
+    - 章节之间用 `<mbp:pagebreak/>` 分节。
+    """
+    parts = [
+        "<html><head><guide>"
+        f'<reference type="toc" title="目录" filepos="{toc_offset}"/>'
+        "</guide></head><body>",
+        "<h2>目录</h2>",
+    ]
+    for (title, _), offset in zip(CHAPTERS, chapter_offsets):
+        parts.append(f'<p><a filepos="{offset}">{title}</a></p>')
+    for title, paragraphs in CHAPTERS:
+        parts.append("<mbp:pagebreak/>")
         parts.append(f"<h2>{title}</h2>")
         for paragraph in paragraphs:
             parts.append(f"<p>{paragraph}</p>")
     parts.append("</body></html>")
     return "".join(parts).encode("utf-8")
+
+
+def solve_offsets() -> bytes:
+    """filepos 是「整本书正文的字节偏移」，而偏移本身又是正文的一部分（数字位数会变）。
+
+    所以反复用上一轮的偏移重建正文，直到偏移不再变化为止（通常两三轮就稳定）。
+    """
+    chapter_offsets = [0] * len(CHAPTERS)
+    toc_offset = 0
+    text = b""
+    for _ in range(6):
+        text = build_text(chapter_offsets, toc_offset)
+        new_toc = text.find("<h2>目录</h2>".encode("utf-8"))
+        new_offsets = []
+        for title, _ in CHAPTERS:
+            marker = ("<mbp:pagebreak/><h2>" + title + "</h2>").encode("utf-8")
+            index = text.find(marker)
+            # 指向章节标题本身（跳过 pagebreak 标签）
+            new_offsets.append(index + len("<mbp:pagebreak/>") if index >= 0 else 0)
+        if new_offsets == chapter_offsets and new_toc == toc_offset:
+            break
+        chapter_offsets, toc_offset = new_offsets, new_toc
+    return text
 
 
 def split_records(text: bytes) -> list[bytes]:
@@ -78,7 +112,7 @@ def split_records(text: bytes) -> list[bytes]:
 
 
 def build_mobi() -> bytes:
-    text = build_text()
+    text = solve_offsets()
     text_records = split_records(text)
     title_bytes = TITLE.encode("utf-8")
 
