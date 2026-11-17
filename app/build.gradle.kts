@@ -12,8 +12,8 @@ android {
         applicationId = "com.lumenbook.reader"
         minSdk = 26
         targetSdk = 37
-        versionCode = 13
-        versionName = "0.4.0"
+        versionCode = 14
+        versionName = "0.4.1"
     }
 
     buildTypes {
@@ -48,4 +48,5 @@ dependencies {
     implementation(libs.androidx.compose.icons.core)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.webkit)
+    testImplementation("junit:junit:4.13.2")
 }

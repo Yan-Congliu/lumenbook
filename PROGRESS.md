@@ -17,7 +17,7 @@ TXT 转派生 EPUB、MOBI/AZW3 还没验证。
 | 0 | 工具链、可构建 Compose 骨架、hello APK、git/GitHub | ✅ 完成，真机验证通过 |
 | 1 | HTML 原型（书库/阅读页/设置/操作面板）→ `webproto/index.html` | ✅ 完成，截图在 `dist/proto-*.png` |
 | 2 | 书库：导入、封面、元数据抠取、重命名、删除、统计、设置、深色主题 | ✅ 代码完成，APK 0.2.0 已出包 |
-| 3 | 阅读内核：WebView + foliate-js 承载 EPUB/FB2/CBZ，TXT 转派生 EPUB | 🟡 EPUB 真机可读（0.3.7）；TXT/MOBI/AZW3 待验证 |
+| 3 | 阅读内核：WebView + foliate-js 承载 EPUB/FB2/CBZ，TXT 转派生 EPUB | 🟡 EPUB 真机可读（0.3.7）；TXT 已实现（0.4.1，桌面验证通过）；MOBI/AZW3 待验证 |
 | 4 | PDF 阅读（PdfRenderer） | 🟡 代码完成，APK 0.4.0 待真机验收 |
 | 5 | MOBI/AZW3 | ⬜ |
 | 6 | 元数据写回原文件（APP_ONLY / WRITE_BACK 双模式） | ⬜ |
@@ -31,6 +31,17 @@ python scripts\build_apk.py            # 出 debug 包到 dist\
 python scripts\bump_version.py --set 0.3.0
 python scripts\vendor_foliate.py       # 重新拉 foliate-js（自动打排版补丁）
 python scripts\reader_smoke.py         # 生成桌面冒烟站点（加 --serve 起 8899 端口）
+python scripts\make_test_pdf.py        # 生成 4 页测试 PDF
+python scripts\txt_split_proto.py dist\sample-book.txt -o dist\txt.epub   # TXT→EPUB 参考实现
+```
+
+单测（JVM，不需要真机）：
+
+```powershell
+$ws = (Get-Location).Path
+$env:JAVA_HOME="$ws\.tooling\jdk-21"; $env:ANDROID_HOME="$ws\.tooling\android-sdk"
+$env:GRADLE_USER_HOME="$ws\.tooling\gradle-home"; $env:TMP="$ws\.tooling\tmp"; $env:TEMP=$env:TMP
+& "$ws\.tooling\gradle\gradle-9.9.1\bin\gradle.bat" --no-daemon :app:testDebugUnitTest
 ```
 
 - 工具链全在 `.tooling/`（gitignore，不进仓库）。`build_apk.py` 会设好 `JAVA_HOME` / `ANDROID_HOME` / `GRADLE_USER_HOME` / `TMP`，**不要裸跑 gradle**。
@@ -105,6 +116,24 @@ PdfReaderScreen            BookFormat.PDF 时由 ReaderScreen 直接转进来
 - 轻点分区：左 30% 上一页、右 30% 下一页、中间呼出/隐藏工具栏（放大到 >1.01 倍后轻点只收起工具栏，避免和拖动打架）。
 - `ReaderScreen` 顶部改成先判 PDF：`if (book.format == BookFormat.PDF) { PdfReaderScreen(...); return }`。
 - 测试用 PDF：`python scripts/make_test_pdf.py -o dist/test-pdf.pdf --pages 4`（手拼 PDF 语法，纯 ASCII，不依赖第三方库），Edge 里确认 4 页能正常渲染。
+
+## 阶段 3 补充：TXT 转派生 EPUB（0.4.1）
+
+TXT 没有分页信息，直接扔进阅读器会变成一条竖着几万字的「长卷」，翻页手感全无。做法：
+
+```
+importer/TxtToEpub.kt
+  ensure(context, book)     缓存 filesDir/derived/<bookId>.epub（源文件 mtime 变了才重新生成）
+  decode(bytes)             BOM → 严格 UTF-8 → GB18030 兜底
+  split(text)               认「第 X 章/回/卷…」「Chapter N」「序章/楔子/尾声/番外」为章标题；
+                            一行标题都认不出就整篇一章；单章 > 1 万字再按段落切块（5000 字左右）
+  writeEpub(...)            java.util.zip 手写最小 EPUB3：mimetype 必须第一条且 STORED
+ui/reader/TxtReaderScreen.kt  转码期显示进度 → 转完把派生 EPUB 当普通 EPUB 交给 ReaderScreen
+```
+
+- `scripts/txt_split_proto.py` 是同一套规则的 Python 参考实现，用来在没有真机时验证产出的 EPUB 能不能被 foliate 正确分页（已验证：3 章、目录正确、正文正常排版）。
+- 单测 `app/src/test/java/com/lumenbook/reader/importer/TxtToEpubTest.kt`（7 个用例）覆盖拆章、切块、编码探测、EPUB 结构与 mimetype 顺序；跑法见「怎么跑」。
+- 踩过的坑：开头第一行就是「第一章 xxx」时，旧逻辑要求 `body.isNotEmpty()` 才算标题，结果第一章标题被当成正文吞掉；现在改成「标题行永远优先，缓冲区非空才 flush」。
 
 ## 关键决定（为什么这么做）
 

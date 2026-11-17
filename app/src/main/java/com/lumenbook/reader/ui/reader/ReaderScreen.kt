@@ -296,6 +296,10 @@ fun ReaderScreen(
     colors: LumenColors,
     onClose: () -> Unit,
 ) {
+    if (book.format == BookFormat.TXT) {
+        TxtReaderScreen(book, container, colors, onClose)
+        return
+    }
     if (book.format == BookFormat.PDF) {
         PdfReaderScreen(book, container, colors, onClose)
         return
