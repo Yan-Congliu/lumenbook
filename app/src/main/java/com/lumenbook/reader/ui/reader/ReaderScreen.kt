@@ -48,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +71,7 @@ import com.lumenbook.reader.BuildConfig
 import com.lumenbook.reader.data.AppContainer
 import com.lumenbook.reader.data.Book
 import com.lumenbook.reader.data.BookFormat
+import com.lumenbook.reader.data.ReaderStyle
 import com.lumenbook.reader.ui.theme.LumenColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -79,6 +81,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 import java.util.Locale
+import kotlin.math.roundToInt
 
 private const val ASSET_DOMAIN = "appassets.androidplatform.net"
 
@@ -116,15 +119,14 @@ private fun BookFormat.mime(): String = when (this) {
 
 private fun Color.hex(): String = String.format(Locale.US, "#%06X", toArgb() and 0xFFFFFF)
 
-/** 传给网页的排版参数；以后改字号/主题只要重新发一次。 */
-private fun themeJson(colors: LumenColors): String = JSONObject().apply {
+/** 传给网页的排版参数；改字号/行距/主题只要重新发一次。 */
+private fun themeJson(colors: LumenColors, style: ReaderStyle): String = JSONObject().apply {
     put("paper", colors.page.hex())
     put("ink", colors.text.hex())
     put("accent", colors.accent.hex())
-    // 字号 18 / 行距 1.8 是手机上接近 Books 的观感：360dp 宽约 18~19 个字一行
-    put("fontSize", 18)
-    put("lineHeight", 1.8)
-    put("margin", 32)
+    put("fontSize", style.fontSize)
+    put("lineHeight", style.lineHeight.toDouble())
+    put("margin", style.margin)
     put("gap", 10)
     put("justify", true)
 }.toString()
@@ -307,10 +309,12 @@ fun ReaderScreen(
         }
     }
     var showToc by remember { mutableStateOf(false) }
+    var showStyle by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) }
     var lastError by remember { mutableStateOf<String?>(null) }
     val lastSaveAt = remember { longArrayOf(0L) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val readerStyle by container.prefs.readerStyle.collectAsState(initial = ReaderStyle())
 
     val assetLoader = remember(book.localPath) {
         WebViewAssetLoader.Builder()
@@ -355,9 +359,9 @@ fun ReaderScreen(
         )
     }
 
-    val openScript = remember(book.id) {
+    val openScript = remember(book.id, readerStyle, colors) {
         val url = "https://$ASSET_DOMAIN/book/${book.id}.${book.format.name.lowercase()}"
-        "window.lumen.open(${JSONObject.quote(url)}, ${JSONObject.quote(book.location ?: "")}, ${themeJson(colors)})"
+        "window.lumen.open(${JSONObject.quote(url)}, ${JSONObject.quote(book.location ?: "")}, ${themeJson(colors, readerStyle)})"
     }
 
     /** 退出阅读页前的收尾：落库最后位置。 */
@@ -397,6 +401,13 @@ fun ReaderScreen(
         if (ui.pageLoaded && !opened) {
             opened = true
             webView.evaluateJavascript(openScript, null)
+        }
+    }
+
+    // 改字号/行距/边距时立刻重排，不用重开书。
+    LaunchedEffect(readerStyle, colors) {
+        if (ui.ready) {
+            webView.evaluateJavascript("window.lumen.applyTheme(${themeJson(colors, readerStyle)})", null)
         }
     }
 
@@ -451,6 +462,7 @@ fun ReaderScreen(
                     onSeek = { value ->
                         webView.evaluateJavascript("window.lumen.goToFraction($value)", null)
                     },
+                    onStyle = { showStyle = true },
                 )
             }
         }
@@ -489,6 +501,17 @@ fun ReaderScreen(
                 }
             }
         }
+    }
+
+    if (showStyle) {
+        ReaderStyleSheet(
+            style = readerStyle,
+            colors = colors,
+            onFontSize = { value -> scope.launch { container.prefs.setFontSize(value) } },
+            onLineHeight = { value -> scope.launch { container.prefs.setLineHeight(value) } },
+            onMargin = { value -> scope.launch { container.prefs.setMargin(value) } },
+            onDismiss = { showStyle = false },
+        )
     }
 
     if (showToc) {
@@ -594,27 +617,114 @@ private fun ReaderTopBar(
     }
 }
 
+/** 阅读设置：字号、行距、页边距。改一下即时重排，不用重开书。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReaderStyleSheet(
+    style: ReaderStyle,
+    colors: LumenColors,
+    onFontSize: (Int) -> Unit,
+    onLineHeight: (Float) -> Unit,
+    onMargin: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.surface) {
+        Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+            Text("阅读设置", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(4.dp))
+            Text("调成看着顺眼的样子，换书也记得住。", color = colors.textTertiary, fontSize = 12.sp)
+            Spacer(Modifier.height(14.dp))
+            StyleSlider(
+                label = "字号",
+                value = "${style.fontSize}",
+                current = style.fontSize.toFloat(),
+                range = ReaderStyle.FONT_RANGE,
+                steps = 14,
+                colors = colors,
+                onChange = { onFontSize(it.roundToInt()) },
+            )
+            StyleSlider(
+                label = "行距",
+                value = String.format(Locale.US, "%.1f", style.lineHeight),
+                current = style.lineHeight,
+                range = ReaderStyle.LINE_RANGE,
+                steps = 10,
+                colors = colors,
+                onChange = { onLineHeight((it * 10).roundToInt() / 10f) },
+            )
+            StyleSlider(
+                label = "页边距",
+                value = "${style.margin}",
+                current = style.margin.toFloat(),
+                range = ReaderStyle.MARGIN_RANGE,
+                steps = 14,
+                colors = colors,
+                onChange = { onMargin((it / 4).roundToInt() * 4) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun StyleSlider(
+    label: String,
+    value: String,
+    current: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    colors: LumenColors,
+    onChange: (Float) -> Unit,
+) {
+    Column(Modifier.padding(vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = colors.text, fontSize = 13.sp)
+            Spacer(Modifier.weight(1f))
+            Text(value, color = colors.textTertiary, fontSize = 12.sp)
+        }
+        Slider(
+            value = current.coerceIn(range.start, range.endInclusive),
+            onValueChange = onChange,
+            valueRange = range,
+            steps = steps,
+            colors = SliderDefaults.colors(
+                thumbColor = colors.accent,
+                activeTrackColor = colors.accent,
+                inactiveTrackColor = colors.separator,
+            ),
+            modifier = Modifier.height(30.dp),
+        )
+    }
+}
+
 @Composable
 private fun ReaderBottomBar(
     fraction: Float,
     colors: LumenColors,
     onSeekPreview: (Float) -> Unit,
     onSeek: (Float) -> Unit,
+    onStyle: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(colors.page.copy(alpha = 0.97f))
             .navigationBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 4.dp),
     ) {
         HorizontalDivider(color = colors.separator)
         Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = onStyle,
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                modifier = Modifier.height(32.dp).width(44.dp),
+            ) {
+                Text("Aa", color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            }
             Text(
                 "${(fraction * 100).toInt()}%",
                 color = colors.textTertiary,
                 fontSize = 11.sp,
-                modifier = Modifier.width(44.dp),
+                modifier = Modifier.width(36.dp),
             )
             Slider(
                 value = fraction.coerceIn(0f, 1f),
