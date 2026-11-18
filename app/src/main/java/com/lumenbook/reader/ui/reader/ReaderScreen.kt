@@ -130,8 +130,6 @@ private class ReaderUi {
     /** 当前页 / 全书总页数（网页估算的，拿不到总量时 total = 0）。 */
     var page by mutableIntStateOf(1)
     var totalPages by mutableIntStateOf(0)
-    /** 工具栏展开后，点左上角书名位置才会露出返回箭头（Books 的藏法）。 */
-    var backShown by mutableStateOf(false)
     /** 每次用户碰一下正文就 +1，用来给「自动收起工具栏」的 6 秒计时续命。 */
     var activity by mutableIntStateOf(0)
 }
@@ -433,11 +431,7 @@ fun ReaderScreen(
                 lastError = message ?: "未知错误"
                 if (!ui.ready) ui.error = message ?: "打开失败"
             },
-            toggled = {
-                ui.chromeVisible = !ui.chromeVisible
-                // 每回收起工具栏，返回箭头也收回去，下次再点书名才出来
-                if (!ui.chromeVisible) ui.backShown = false
-            },
+            toggled = { ui.chromeVisible = !ui.chromeVisible },
             touched = { ui.activity += 1 },
             hidden = { ui.chromeVisible = false },
             pageInfo = { current, total ->
@@ -600,22 +594,6 @@ fun ReaderScreen(
                             ),
                         ),
                 )
-                Column(
-                    Modifier
-                        .fillMaxSize()
-                        .statusBarsPadding()
-                        .navigationBarsPadding(),
-                ) {
-                    Spacer(Modifier.weight(1f))
-                    ReaderSeekBar(
-                        fraction = ui.fraction,
-                        colors = colors,
-                        onSeekPreview = { value -> ui.fraction = value },
-                        onSeek = { value ->
-                            webView.evaluateJavascript("window.lumen.goToFraction($value)", null)
-                        },
-                    )
-                }
                 // 右下角：菜单按钮。点开才是目录 / 书签 / 主题与字体。
                 Box(
                     modifier = Modifier
@@ -640,7 +618,7 @@ fun ReaderScreen(
             }
         }
 
-        // 常驻信息层：左上书名（工具栏展开后点它变返回箭头）、顶中章节名、底中页码。
+        // 常驻信息层：左上书名（工具栏展开后换成返回箭头）、右上书签按钮、顶中章节名、底中页码。
         ReaderMetaLayer(
             title = book.title,
             chapter = ui.chapter,
@@ -648,13 +626,13 @@ fun ReaderScreen(
             total = ui.totalPages,
             fraction = ui.fraction,
             chrome = ui.chromeVisible,
-            backShown = ui.backShown,
+            bookmarked = currentBookmarked,
             colors = colors,
-            onTitleTap = {
-                ui.activity += 1
-                ui.backShown = !ui.backShown
-            },
             onBack = { finish() },
+            onBookmark = {
+                ui.activity += 1
+                toggleBookmark()
+            },
         )
 
         if (!ui.ready && ui.error == null) {
@@ -697,15 +675,10 @@ fun ReaderScreen(
         ReaderMenuSheet(
             hasToc = ui.toc.isNotEmpty(),
             bookmarkCount = bookmarks.size,
-            bookmarked = currentBookmarked,
             colors = colors,
             onToc = { showMenu = false; showToc = true },
             onBookmarks = { showMenu = false; showToc = true },
             onStyle = { showMenu = false; showStyle = true },
-            onToggleBookmark = {
-                showMenu = false
-                toggleBookmark()
-            },
             onDismiss = { showMenu = false },
         )
     }
@@ -855,7 +828,8 @@ private fun BookmarkGlyph(color: Color, filled: Boolean, modifier: Modifier = Mo
     }
 }
 
-/** 常驻信息层：左上书名（工具栏展开后点它变返回箭头）、顶中章节名、底中页码。 */
+/** 常驻信息层：左上书名、顶中章节名、底中页码。
+ *  工具栏展开时：左上换成返回箭头、右上出现书签按钮（当页已加则实心）。*/
 @Composable
 private fun ReaderMetaLayer(
     title: String,
@@ -864,10 +838,10 @@ private fun ReaderMetaLayer(
     total: Int,
     fraction: Float,
     chrome: Boolean,
-    backShown: Boolean,
+    bookmarked: Boolean,
     colors: LumenColors,
-    onTitleTap: () -> Unit,
     onBack: () -> Unit,
+    onBookmark: () -> Unit,
 ) {
     val pageLabel = when {
         total > 0 && chrome -> "$page / $total"
@@ -882,7 +856,7 @@ private fun ReaderMetaLayer(
             .padding(horizontal = 14.dp, vertical = 6.dp),
     ) {
         Box(Modifier.fillMaxWidth()) {
-            if (chrome && backShown) {
+            if (chrome) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
@@ -908,7 +882,6 @@ private fun ReaderMetaLayer(
                     modifier = Modifier
                         .fillMaxWidth(0.42f)
                         .align(Alignment.CenterStart)
-                        .clickable(onClick = onTitleTap)
                         .padding(vertical = 5.dp),
                 )
             }
@@ -924,6 +897,22 @@ private fun ReaderMetaLayer(
                     .align(Alignment.Center)
                     .padding(vertical = 5.dp),
             )
+            if (chrome) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(50))
+                        .clickable(onClick = onBookmark),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BookmarkGlyph(
+                        color = if (bookmarked) colors.accent else colors.textSecondary,
+                        filled = bookmarked,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
+            }
         }
         Text(
             text = pageLabel,
@@ -934,42 +923,16 @@ private fun ReaderMetaLayer(
     }
 }
 
-/** 底部进度条：工具栏展开时才出现，只是一条细线，没有整条栏。 */
-@Composable
-private fun ReaderSeekBar(
-    fraction: Float,
-    colors: LumenColors,
-    onSeekPreview: (Float) -> Unit,
-    onSeek: (Float) -> Unit,
-) {
-    Slider(
-        value = fraction.coerceIn(0f, 1f),
-        onValueChange = onSeekPreview,
-        onValueChangeFinished = { onSeek(fraction) },
-        colors = SliderDefaults.colors(
-            thumbColor = colors.accent,
-            activeTrackColor = colors.accent,
-            inactiveTrackColor = colors.separator,
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp)
-            .height(26.dp),
-    )
-}
-
 /** 右下角菜单按钮点开的单子：目录 / 书签 / 主题与字体。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReaderMenuSheet(
     hasToc: Boolean,
     bookmarkCount: Int,
-    bookmarked: Boolean,
     colors: LumenColors,
     onToc: () -> Unit,
     onBookmarks: () -> Unit,
     onStyle: () -> Unit,
-    onToggleBookmark: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.surface) {
@@ -986,26 +949,6 @@ private fun ReaderMenuSheet(
             )
             HorizontalDivider(color = colors.separator, modifier = Modifier.padding(horizontal = 22.dp))
             MenuRow("主题与字体", colors = colors, onClick = onStyle)
-            HorizontalDivider(color = colors.separator, modifier = Modifier.padding(horizontal = 22.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onToggleBookmark)
-                    .padding(horizontal = 22.dp, vertical = 15.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = if (bookmarked) "取消这一页的书签" else "给这一页加书签",
-                    fontSize = 15.sp,
-                    color = colors.text,
-                )
-                Spacer(Modifier.weight(1f))
-                BookmarkGlyph(
-                    color = if (bookmarked) colors.accent else colors.textTertiary,
-                    filled = bookmarked,
-                    modifier = Modifier.size(17.dp),
-                )
-            }
         }
     }
 }
