@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumenbook.reader.data.Book
 import com.lumenbook.reader.data.BookFormat
+import com.lumenbook.reader.data.LibraryStyle
 import com.lumenbook.reader.ui.theme.LocalLumenColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -93,6 +94,7 @@ private enum class Sort(val label: String) {
 @Composable
 fun LibraryScreen(
     books: List<Book>,
+    style: LibraryStyle,
     onImport: () -> Unit,
     onOpen: (Book) -> Unit,
     onEdit: (Book, String, String?, Uri?, Boolean) -> Unit,
@@ -213,9 +215,14 @@ fun LibraryScreen(
                 modifier = Modifier.padding(24.dp),
             )
             else -> LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                columns = GridCells.Fixed(style.columns),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 10.dp,
+                    bottom = 24.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(if (style.columns >= 4) 10.dp else 12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -228,6 +235,7 @@ fun LibraryScreen(
                     ) {
                         BookCover(
                             book = book,
+                            corner = style.coverRadius.dp,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(2f / 3f),
@@ -235,21 +243,23 @@ fun LibraryScreen(
                         Text(
                             text = book.title,
                             color = colors.text,
-                            fontSize = 13.sp,
-                            lineHeight = 17.sp,
+                            fontSize = if (style.columns >= 4) 12.sp else 13.sp,
+                            lineHeight = if (style.columns >= 4) 15.sp else 17.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp),
                         )
-                        Text(
-                            text = book.author ?: book.format.label,
-                            color = colors.textSecondary,
-                            fontSize = 11.sp,
-                            lineHeight = 14.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = 2.dp, end = 2.dp, top = 1.dp),
-                        )
+                        if (style.showAuthor) {
+                            Text(
+                                text = book.author ?: book.format.label,
+                                color = colors.textSecondary,
+                                fontSize = 11.sp,
+                                lineHeight = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 2.dp, end = 2.dp, top = 1.dp),
+                            )
+                        }
                     }
                 }
             }

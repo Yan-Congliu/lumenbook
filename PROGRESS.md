@@ -470,9 +470,43 @@ SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用�
 - 展开工具栏后等 7 秒 → 自动收起；**收起后的截图与出现前的截图 sha256 完全一致**，证明没有任何重排。
 - 42 MB 的《二十四史（含清史稿）》能正常导入并打开（显示「主目录」页）。
 
+## 阶段 8：外观设置 + Apple Books 式信息层（0.6.15）
+
+用户要的（原话）：「模仿apple book，阅读时左上角常驻书名，顶上中部常驻章节名，底部的中部常驻页码。
+单击中40%打开菜单栏后页码转变为"当前页码/总页数"，右下角合适位置出现菜单按钮点击后再出现目录、主题设置、书签，
+左上角原位置点击后出现退出箭头。字体族那里再加一个仿宋。」
+
+### 做了什么
+
+- **数据层**（`data/Prefs.kt` 重写）：`ReaderTheme`（SYSTEM/PAPER/WHITE/GREEN/BLUE/INK/BLACK）、
+  `ReaderFont`（SONG/HEI/KAI/**FANG 仿宋**/MONO）、`ReaderAlign`（JUSTIFY/LEFT）、
+  `ReaderStyle(fontSize, lineHeight, margin, font, align, indent)`、
+  `LibraryStyle(columns 3|4, coverRadius, showAuthor)`、`backgroundDim`；全部走 DataStore。
+- **配色**（`ui/theme/LumenColors.kt`）：新增白纸/护眼绿/灰蓝/纯黑四套，`lumenColorsFor(theme, systemDark)`；
+  `Theme.kt` 提供 `rememberLumenColors(theme)`，整个 App（书库、设置、阅读页）都跟着换。
+- **设置页**：外观区 = 「跟随系统」+ 6 个纸色圆；新增「书库外观」（三列/四列、封面圆角滑条、显示作者开关）；
+  有自定义背景图时多一条「压暗程度」。
+- **书库**：列数/圆角/作者行都按 `LibraryStyle` 走。
+- **阅读页**：常驻信息层（左上书名、顶中章节名、底中页码）；点中 40% 淡入工具栏 —— 底部细进度条 +
+  页码变「15 / 2728」+ 右下 ☰ 菜单按钮；☰ 打开底部菜单（目录 / 书签 / 主题与字体 / 给这一页加书签）；
+  点左上书名换成圆形返回箭头，再点出书库。
+- 「主题与字体」面板：6 种纸色、5 种字体（含仿宋）、字号/行距/页边距/首行缩进滑条、对齐两档。
+
+### 两个真坑
+
+1. **书名被竖向裁成半行**：信息层那一行原来写了 `height(20.dp)`，11sp 的字加上上下 padding 超过 20dp 就被裁掉。
+   改成不给固定高度，书名/章节名各自 `padding(vertical = 5.dp)`。
+2. **换主题后「中间绿、四周米」**：`openScript = remember(book.id, readerStyle, colors)`，
+   换主题会让 openScript 变 → 重新打开整本书，新文档外层 `html/body` 回到默认米纸色（只有 iframe 正文拿到新 CSS）。
+   改成 `remember(book.id, book.localPath)`，换主题/字号只走 `window.lumen.applyTheme(...)`，不再重开书。
+
+实测（Android 16 模拟器，debug 包）：护眼绿整页统一 `#E7EFDD`、楷体生效、页码 11；
+中央点击出「11 / 2341」与 ☰；菜单四项正常；左上书名→返回箭头→回到书库；
+设置页四列 + 圆角 + 隐藏作者后书库立即变 4 列。
+
 ## 下一步
 
-1. 用户验收 0.6.14：滑动不再弹工具栏、工具栏渐入渐出、6 秒自动收、排版不跳。
+1. 用户验收 0.6.15：外观设置（纸色/字体/排版/书库外观）+ 阅读页信息层与菜单按钮。
 2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.14-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
 3. MOBI/AZW3 真实样书暂不追（用户明确说不做），自造 MOBI6 样书已确认解析链路与目录。
 4. 阶段 8 剩下：PDF 目录（需要换 PDF 解析库）、按标签/系列分组、阅读页页码（foliate 只给百分比）。

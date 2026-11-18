@@ -83,6 +83,7 @@ let style = {
   margin: 32,
   gap: 10,
   justify: true,
+  indent: 2,
 }
 
 function bridge(method, ...args) {
@@ -150,6 +151,7 @@ function contentCss() {
       -webkit-font-smoothing: antialiased;
     }
     p, div, li, blockquote { line-height: ${style.lineHeight} !important; }
+    p { text-indent: ${style.indent ?? 0}em !important; }
     a { color: ${style.accent} !important; text-decoration: none; }
     img { max-width: 100% !important; height: auto !important; }
     ::selection { background: ${style.accent}44; }
@@ -189,6 +191,32 @@ function tocToJson(items, depth = 0) {
 
 let lastReported = { cfi: '', fraction: -1 }
 
+/** 页码：本节页数 + 本节在全书里的占比，估算全书总页数。
+ *  foliate 只给「本节有几页」，但 book.sections[i].size 是每节的字数权重，
+ *  拿 totalSize * pages / sectionSize 就能估出全书页数（排版一致，误差很小）。
+ */
+function reportPages(detail, fraction) {
+  try {
+    const renderer = view.renderer
+    const pages = renderer?.pages || 0
+    const sectionPage = (renderer?.page || 0) + 1
+    const sections = view.book?.sections || []
+    const idx = detail?.section?.current ?? 0
+    const sectionSize = sections[idx]?.size || 0
+    const totalSize = sections.reduce((a, s) => a + (s.size || 0), 0)
+    let total = 0
+    if (pages > 0 && sectionSize > 0 && totalSize > 0) {
+      total = Math.max(pages, Math.round(totalSize * pages / sectionSize))
+    } else if (pages > 0) {
+      total = pages
+    }
+    const current = total > 0 ? Math.max(1, Math.min(total, Math.round(fraction * total) + 1)) : sectionPage
+    bridge('onPageInfo', current, total)
+  } catch (e) {
+    console.error('pages', e)
+  }
+}
+
 function onRelocate(detail) {
   try {
     const fraction = typeof detail?.fraction === 'number' ? detail.fraction : 0
@@ -198,6 +226,7 @@ function onRelocate(detail) {
     if (cfi && cfi === lastReported.cfi) return
     lastReported = { cfi, fraction }
     bridge('onRelocate', cfi, JSON.stringify({ fraction, label }))
+    reportPages(detail, fraction)
   } catch (e) {
     console.error('relocate', e)
   }

@@ -3,6 +3,7 @@ package com.lumenbook.reader.ui.theme
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.lumenbook.reader.data.ReaderTheme
 
 /**
  * 鎏书的配色。刻意不用 Material 的 dynamic color：书库和阅读页要保持「纸张感」，
@@ -52,6 +53,69 @@ val DarkLumenColors = LumenColors(
     accent = Color(0xFFC99B6C),
     separator = Color(0xFF34302B),
 )
+
+/** 白纸：纸白偏一点点暖，不像纯白那么刺眼。*/
+val WhiteLumenColors = LumenColors(
+    isDark = false,
+    page = Color(0xFFFDFCFA),
+    surface = Color(0xFFFFFFFF),
+    surfaceMuted = Color(0xFFF2F1EE),
+    text = Color(0xFF151413),
+    textSecondary = Color(0xFF6B6660),
+    textTertiary = Color(0xFF9C968D),
+    accent = Color(0xFFA9764D),
+    separator = Color(0xFFE7E3DC),
+)
+
+/** 护眼绿：淡淡的豆绿纸。*/
+val GreenLumenColors = LumenColors(
+    isDark = false,
+    page = Color(0xFFE7EFDD),
+    surface = Color(0xFFEFF4E9),
+    surfaceMuted = Color(0xFFDDE7D2),
+    text = Color(0xFF1F2A1C),
+    textSecondary = Color(0xFF5E6B56),
+    textTertiary = Color(0xFF8B9781),
+    accent = Color(0xFF4F7A46),
+    separator = Color(0xFFD3DEC8),
+)
+
+/** 灰蓝：冷调的纸。*/
+val BlueLumenColors = LumenColors(
+    isDark = false,
+    page = Color(0xFFE6EDF3),
+    surface = Color(0xFFEEF3F8),
+    surfaceMuted = Color(0xFFDBE4ED),
+    text = Color(0xFF1A2430),
+    textSecondary = Color(0xFF5B6875),
+    textTertiary = Color(0xFF8A97A5),
+    accent = Color(0xFF3F6B8F),
+    separator = Color(0xFFD2DDE7),
+)
+
+/** 纯黑：OLED 省电、夜里最暗。*/
+val BlackLumenColors = LumenColors(
+    isDark = true,
+    page = Color(0xFF000000),
+    surface = Color(0xFF0B0B0B),
+    surfaceMuted = Color(0xFF171717),
+    text = Color(0xFFE9E9E9),
+    textSecondary = Color(0xFF9A9A9A),
+    textTertiary = Color(0xFF6A6A6A),
+    accent = Color(0xFFC99B6C),
+    separator = Color(0xFF262626),
+)
+
+/** 按主题 + 系统明暗算出实际配色。SYSTEM 跟着系统走，其余主题跟系统无关。*/
+fun lumenColorsFor(theme: ReaderTheme, systemDark: Boolean): LumenColors = when (theme) {
+    ReaderTheme.SYSTEM -> if (systemDark) DarkLumenColors else LightLumenColors
+    ReaderTheme.PAPER -> LightLumenColors
+    ReaderTheme.WHITE -> WhiteLumenColors
+    ReaderTheme.GREEN -> GreenLumenColors
+    ReaderTheme.BLUE -> BlueLumenColors
+    ReaderTheme.INK -> DarkLumenColors
+    ReaderTheme.BLACK -> BlackLumenColors
+}
 
 val LocalLumenColors = staticCompositionLocalOf { LightLumenColors }
 

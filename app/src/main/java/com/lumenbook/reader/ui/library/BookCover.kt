@@ -42,8 +42,9 @@ import java.io.File
 fun BookCover(
     book: Book,
     modifier: Modifier = Modifier,
+    corner: androidx.compose.ui.unit.Dp = 7.dp,
 ) {
-    val shape = RoundedCornerShape(7.dp)
+    val shape = RoundedCornerShape(corner)
     val (c1, c2) = coverPaletteFor(book.title)
     val bitmap by produceState<ImageBitmap?>(initialValue = null, book.coverPath) {
         value = withContext(Dispatchers.IO) {

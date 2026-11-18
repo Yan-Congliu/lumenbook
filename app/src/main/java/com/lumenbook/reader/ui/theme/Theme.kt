@@ -10,6 +10,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import com.lumenbook.reader.data.ReaderTheme
 
 /** 书卷气：标题用衬线，正文和界面控件用系统无衬线。*/
 private val LumenTypography: Typography = Typography().let { t ->
@@ -28,10 +29,9 @@ private val LumenTypography: Typography = Typography().let { t ->
 
 @Composable
 fun LumenTheme(
-    dark: Boolean,
+    colors: LumenColors,
     content: @Composable () -> Unit,
 ) {
-    val colors = if (dark) DarkLumenColors else LightLumenColors
     CompositionLocalProvider(LocalLumenColors provides colors) {
         MaterialTheme(
             colorScheme = colors.toColorScheme(),
@@ -41,13 +41,11 @@ fun LumenTheme(
     }
 }
 
-/** 按用户偏好 + 系统状态决定用哪套。*/
+/** 按主题 + 系统明暗决定用哪套配色。*/
 @Composable
-fun shouldUseDarkTheme(appearance: com.lumenbook.reader.data.Appearance): Boolean = when (appearance) {
-    com.lumenbook.reader.data.Appearance.SYSTEM -> isSystemInDarkTheme()
-    com.lumenbook.reader.data.Appearance.LIGHT -> false
-    com.lumenbook.reader.data.Appearance.DARK -> true
-}
+fun rememberLumenColors(theme: ReaderTheme): LumenColors =
+    lumenColorsFor(theme, isSystemInDarkTheme())
+
 
 private fun LumenColors.toColorScheme() = if (isDark) {
     darkColorScheme(

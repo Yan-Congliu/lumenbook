@@ -40,8 +40,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumenbook.reader.data.AppContainer
-import com.lumenbook.reader.data.Appearance
 import com.lumenbook.reader.data.BackgroundStore
+import com.lumenbook.reader.data.LibraryStyle
+import com.lumenbook.reader.data.ReaderTheme
 import com.lumenbook.reader.ui.imports.ImportScreen
 import com.lumenbook.reader.ui.library.LibraryScreen
 import com.lumenbook.reader.ui.reader.ReaderScreen
@@ -61,13 +62,14 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 @Composable
 fun LumenAppRoot(
     container: AppContainer,
-    appearance: Appearance,
-    onAppearanceChange: (Appearance) -> Unit,
+    theme: ReaderTheme,
+    onThemeChange: (ReaderTheme) -> Unit,
 ) {
     val colors = LocalLumenColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val books by container.library.books.collectAsState()
+    val libraryStyle by container.prefs.libraryStyle.collectAsState(initial = LibraryStyle())
     var tab by rememberSaveable { mutableStateOf(Tab.LIBRARY) }
     var readingId by rememberSaveable { mutableStateOf<Long?>(null) }
 
@@ -81,6 +83,8 @@ fun LumenAppRoot(
             book = readingBook,
             container = container,
             colors = colors,
+            theme = theme,
+            onThemeChange = onThemeChange,
             onClose = {
                 readingId = null
                 scope.launch { container.library.refresh() }
@@ -111,6 +115,7 @@ fun LumenAppRoot(
 
     // ---- 自定义背景图 ----
     val backgroundPath by container.prefs.backgroundImage.collectAsState(initial = null)
+    val backgroundDim by container.prefs.backgroundDim.collectAsState(initial = 0.30f)
     val backgroundPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
@@ -136,8 +141,8 @@ fun LumenAppRoot(
             BackgroundStore.clear(context)
         }
     }
-    val background = remember(backgroundPath) {
-        backgroundPath?.let { LumenBackground.Image(it, dim = 0.30f) } ?: LumenBackground.Paper
+    val background = remember(backgroundPath, backgroundDim) {
+        backgroundPath?.let { LumenBackground.Image(it, dim = backgroundDim) } ?: LumenBackground.Paper
     }
 
     LumenBackgroundLayer(background, Modifier.fillMaxSize()) {
@@ -146,6 +151,7 @@ fun LumenAppRoot(
                 when (tab) {
                     Tab.LIBRARY -> LibraryScreen(
                         books = books,
+                        style = libraryStyle,
                         onImport = importBooks,
                         onOpen = { book ->
                             scope.launch { container.library.markOpened(book.id) }
@@ -181,9 +187,21 @@ fun LumenAppRoot(
                     Tab.STATS -> StatsScreen(books)
 
                     Tab.SETTINGS -> SettingsScreen(
-                        appearance = appearance,
-                        onAppearanceChange = onAppearanceChange,
+                        theme = theme,
+                        onThemeChange = onThemeChange,
+                        libraryStyle = libraryStyle,
+                        onColumnsChange = { value -> scope.launch { container.prefs.setColumns(value) } },
+                        onCoverRadiusChange = { value ->
+                            scope.launch { container.prefs.setCoverRadius(value) }
+                        },
+                        onShowAuthorChange = { value ->
+                            scope.launch { container.prefs.setShowAuthor(value) }
+                        },
                         backgroundImage = backgroundPath,
+                        backgroundDim = backgroundDim,
+                        onBackgroundDimChange = { value ->
+                            scope.launch { container.prefs.setBackgroundDim(value) }
+                        },
                         onPickBackground = pickBackground,
                         onClearBackground = clearBackground,
                     )

@@ -1,6 +1,14 @@
 package com.lumenbook.reader.ui.reader
 
 import android.annotation.SuppressLint
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
+import com.lumenbook.reader.data.ReaderAlign
+import com.lumenbook.reader.data.ReaderFont
+import com.lumenbook.reader.data.ReaderTheme
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -15,6 +23,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -110,8 +123,13 @@ private class ReaderUi {
     var fraction by mutableStateOf(0f)
     var chapter by mutableStateOf("")
     var toc by mutableStateOf<List<TocNode>>(emptyList())
-    var chromeVisible by mutableStateOf(true)
+    var chromeVisible by mutableStateOf(false)
     var cfi by mutableStateOf<String?>(null)
+    /** 当前页 / 全书总页数（网页估算的，拿不到总量时 total = 0）。 */
+    var page by mutableIntStateOf(1)
+    var totalPages by mutableIntStateOf(0)
+    /** 工具栏展开后，点左上角书名位置才会露出返回箭头（Books 的藏法）。 */
+    var backShown by mutableStateOf(false)
     /** 每次用户碰一下正文就 +1，用来给「自动收起工具栏」的 6 秒计时续命。 */
     var activity by mutableIntStateOf(0)
 }
@@ -142,8 +160,13 @@ private fun themeJson(colors: LumenColors, style: ReaderStyle): String = JSONObj
     put("lineHeight", style.lineHeight.toDouble())
     put("margin", style.margin)
     put("gap", 10)
-    put("justify", true)
+    put("justify", style.align == ReaderAlign.JUSTIFY)
+    put("fontFamily", style.font.fontStack())
+    put("indent", style.indent)
 }.toString()
+
+/** 字体栈：带双引号的族名在 CSS 里要保留引号，这里只做 JSON 侧的转义交给 put。 */
+private fun ReaderFont.fontStack(): String = stack
 
 private fun parseToc(json: String?): List<TocNode> {
     val obj = runCatching { JSONObject(json ?: "{}") }.getOrDefault(JSONObject())
@@ -208,6 +231,7 @@ class ReaderBridge(
     private val toggled: () -> Unit,
     private val touched: () -> Unit,
     private val hidden: () -> Unit,
+    private val pageInfo: (Int, Int) -> Unit,
 ) {
     @JavascriptInterface
     fun onBoot() {
@@ -254,6 +278,12 @@ class ReaderBridge(
     @JavascriptInterface
     fun onHideChrome() {
         main.post { hidden() }
+    }
+
+    /** 页码：当前页 / 全书总页数（total = 0 表示网页也算不出来）。 */
+    @JavascriptInterface
+    fun onPageInfo(current: Int, total: Int) {
+        main.post { pageInfo(current, total) }
     }
 
     @JavascriptInterface
@@ -325,10 +355,12 @@ fun ReaderScreen(
     book: Book,
     container: AppContainer,
     colors: LumenColors,
+    theme: ReaderTheme,
+    onThemeChange: (ReaderTheme) -> Unit,
     onClose: () -> Unit,
 ) {
     if (book.format == BookFormat.TXT) {
-        TxtReaderScreen(book, container, colors, onClose)
+        TxtReaderScreen(book, container, colors, theme, onThemeChange, onClose)
         return
     }
     if (book.format == BookFormat.PDF) {
@@ -349,6 +381,7 @@ fun ReaderScreen(
         }
     }
     var showToc by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
     var showStyle by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) }
     var bookmarks by remember(book.id) { mutableStateOf<List<Bookmark>>(emptyList()) }
@@ -398,13 +431,23 @@ fun ReaderScreen(
                 lastError = message ?: "未知错误"
                 if (!ui.ready) ui.error = message ?: "打开失败"
             },
-            toggled = { ui.chromeVisible = !ui.chromeVisible },
+            toggled = {
+                ui.chromeVisible = !ui.chromeVisible
+                // 每回收起工具栏，返回箭头也收回去，下次再点书名才出来
+                if (!ui.chromeVisible) ui.backShown = false
+            },
             touched = { ui.activity += 1 },
             hidden = { ui.chromeVisible = false },
+            pageInfo = { current, total ->
+                ui.page = current.coerceAtLeast(1)
+                ui.totalPages = total.coerceAtLeast(0)
+            },
         )
     }
 
-    val openScript = remember(book.id, readerStyle, colors) {
+    // 只跟书绑定：换主题/字号走 applyTheme（注入 CSS 变量），不要重新打开整本书 ——
+    // 重开会丢掉当前页，而且外层页面的底色会退回默认的米纸色。
+    val openScript = remember(book.id, book.localPath) {
         val url = "https://$ASSET_DOMAIN/book/${book.id}.${book.format.name.lowercase()}"
         "window.lumen.open(${JSONObject.quote(url)}, ${JSONObject.quote(book.location ?: "")}, ${themeJson(colors, readerStyle)})"
     }
@@ -490,9 +533,10 @@ fun ReaderScreen(
     val scale = density.density
     val statusBarDp = WindowInsets.statusBars.getTop(density) / scale
     val navBarDp = WindowInsets.navigationBars.getBottom(density) / scale
+    // 常驻信息层会占掉顶部/底部各一条（书名、章节名、页码），正文让开 18dp，免得第一行压在字上。
     LaunchedEffect(ui.ready) {
         webView.evaluateJavascript(
-            "window.lumen && window.lumen.setInsets($statusBarDp, $navBarDp)",
+            "window.lumen && window.lumen.setInsets(${statusBarDp + 18f}, ${navBarDp + 18f})",
             null,
         )
     }
@@ -525,9 +569,10 @@ fun ReaderScreen(
         AndroidView(modifier = Modifier.fillMaxSize(), factory = { webView })
 
         // 工具栏：覆盖在正文上，淡入淡出。正文不重排，只被柔和地遮一下。
+        // Books 的样子：没有整条栏，只有上下两道柔和渐变 + 右下角一个菜单按钮 + 底部进度条。
         AnimatedVisibility(
             visible = ui.chromeVisible,
-            enter = fadeIn(animationSpec = tween(190)) ,
+            enter = fadeIn(animationSpec = tween(190)),
             exit = fadeOut(animationSpec = tween(170)),
         ) {
             Box(Modifier.fillMaxSize()) {
@@ -535,10 +580,10 @@ fun ReaderScreen(
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height(150.dp)
+                        .height(120.dp)
                         .background(
                             Brush.verticalGradient(
-                                listOf(colors.page.copy(alpha = 0.96f), colors.page.copy(alpha = 0f)),
+                                listOf(colors.page.copy(alpha = 0.92f), colors.page.copy(alpha = 0f)),
                             ),
                         ),
                 )
@@ -548,34 +593,67 @@ fun ReaderScreen(
                         .background(
                             Brush.verticalGradient(
                                 0f to Color.Transparent,
-                                0.72f to Color.Transparent,
-                                1f to colors.page.copy(alpha = 0.92f),
+                                0.80f to Color.Transparent,
+                                1f to colors.page.copy(alpha = 0.94f),
                             ),
                         ),
                 )
-                Column(Modifier.fillMaxSize()) {
-                    ReaderTopBar(
-                        title = book.title,
-                        subtitle = ui.chapter,
-                        colors = colors,
-                        bookmarked = currentBookmarked,
-                        onBookmark = toggleBookmark,
-                        onBack = { finish() },
-                        onToc = { if (ui.toc.isNotEmpty() || bookmarks.isNotEmpty()) showToc = true },
-                    )
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding(),
+                ) {
                     Spacer(Modifier.weight(1f))
-                    ReaderBottomBar(
+                    ReaderSeekBar(
                         fraction = ui.fraction,
                         colors = colors,
                         onSeekPreview = { value -> ui.fraction = value },
                         onSeek = { value ->
                             webView.evaluateJavascript("window.lumen.goToFraction($value)", null)
                         },
-                        onStyle = { showStyle = true },
                     )
+                }
+                // 右下角：菜单按钮。点开才是目录 / 书签 / 主题与字体。
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(end = 10.dp, bottom = 14.dp),
+                ) {
+                    IconButton(
+                        onClick = {
+                            ui.activity += 1
+                            showMenu = true
+                        },
+                    ) {
+                        Icon(
+                            Icons.Filled.Menu,
+                            contentDescription = "菜单",
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
         }
+
+        // 常驻信息层：左上书名（工具栏展开后点它变返回箭头）、顶中章节名、底中页码。
+        ReaderMetaLayer(
+            title = book.title,
+            chapter = ui.chapter,
+            page = ui.page,
+            total = ui.totalPages,
+            fraction = ui.fraction,
+            chrome = ui.chromeVisible,
+            backShown = ui.backShown,
+            colors = colors,
+            onTitleTap = {
+                ui.activity += 1
+                ui.backShown = !ui.backShown
+            },
+            onBack = { finish() },
+        )
 
         if (!ui.ready && ui.error == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -613,10 +691,32 @@ fun ReaderScreen(
         }
     }
 
+    if (showMenu) {
+        ReaderMenuSheet(
+            hasToc = ui.toc.isNotEmpty(),
+            bookmarkCount = bookmarks.size,
+            bookmarked = currentBookmarked,
+            colors = colors,
+            onToc = { showMenu = false; showToc = true },
+            onBookmarks = { showMenu = false; showToc = true },
+            onStyle = { showMenu = false; showStyle = true },
+            onToggleBookmark = {
+                showMenu = false
+                toggleBookmark()
+            },
+            onDismiss = { showMenu = false },
+        )
+    }
+
     if (showStyle) {
         ReaderStyleSheet(
             style = readerStyle,
+            theme = theme,
             colors = colors,
+            onTheme = { value -> scope.launch { onThemeChange(value) } },
+            onFont = { value -> scope.launch { container.prefs.setFont(value) } },
+            onAlign = { value -> scope.launch { container.prefs.setAlign(value) } },
+            onIndent = { value -> scope.launch { container.prefs.setIndent(value) } },
             onFontSize = { value -> scope.launch { container.prefs.setFontSize(value) } },
             onLineHeight = { value -> scope.launch { container.prefs.setLineHeight(value) } },
             onMargin = { value -> scope.launch { container.prefs.setMargin(value) } },
@@ -753,87 +853,270 @@ private fun BookmarkGlyph(color: Color, filled: Boolean, modifier: Modifier = Mo
     }
 }
 
+/** 常驻信息层：左上书名（工具栏展开后点它变返回箭头）、顶中章节名、底中页码。 */
 @Composable
-private fun ReaderTopBar(
+private fun ReaderMetaLayer(
     title: String,
-    subtitle: String,
+    chapter: String,
+    page: Int,
+    total: Int,
+    fraction: Float,
+    chrome: Boolean,
+    backShown: Boolean,
     colors: LumenColors,
-    bookmarked: Boolean,
-    onBookmark: () -> Unit,
+    onTitleTap: () -> Unit,
     onBack: () -> Unit,
-    onToc: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.page.copy(alpha = 0.97f))
+    val pageLabel = when {
+        total > 0 && chrome -> "$page / $total"
+        total > 0 -> "$page"
+        else -> "${(fraction * 100).roundToInt()}%"
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
             .statusBarsPadding()
-            .height(56.dp)
-            .padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 6.dp),
     ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "返回",
-                tint = colors.text,
-                modifier = Modifier.size(21.dp),
-            )
-        }
-        Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
-            Text(
-                title,
-                color = colors.text,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle.isNotBlank()) {
+        Box(Modifier.fillMaxWidth()) {
+            if (chrome && backShown) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(50))
+                        .clickable(onClick = onBack),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "返回书库",
+                        tint = colors.text,
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+            } else {
                 Text(
-                    subtitle,
-                    color = colors.textTertiary,
+                    text = title,
                     fontSize = 11.sp,
+                    color = colors.textTertiary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth(0.42f)
+                        .align(Alignment.CenterStart)
+                        .clickable(onClick = onTitleTap)
+                        .padding(vertical = 5.dp),
                 )
             }
-        }
-        IconButton(onClick = onBookmark, modifier = Modifier.semantics { contentDescription = if (bookmarked) "取消书签" else "加书签" }) {
-            BookmarkGlyph(
-                color = if (bookmarked) colors.accent else colors.text,
-                filled = bookmarked,
-                modifier = Modifier.size(19.dp),
+            Text(
+                text = chapter,
+                fontSize = 11.sp,
+                color = colors.textTertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth(0.74f)
+                    .align(Alignment.Center)
+                    .padding(vertical = 5.dp),
             )
         }
-        IconButton(onClick = onToc) {
-            Icon(
-                Icons.AutoMirrored.Filled.List,
-                contentDescription = "目录",
-                tint = colors.text,
-                modifier = Modifier.size(21.dp),
+        Text(
+            text = pageLabel,
+            fontSize = 11.sp,
+            color = colors.textTertiary,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp),
+        )
+    }
+}
+
+/** 底部进度条：工具栏展开时才出现，只是一条细线，没有整条栏。 */
+@Composable
+private fun ReaderSeekBar(
+    fraction: Float,
+    colors: LumenColors,
+    onSeekPreview: (Float) -> Unit,
+    onSeek: (Float) -> Unit,
+) {
+    Slider(
+        value = fraction.coerceIn(0f, 1f),
+        onValueChange = onSeekPreview,
+        onValueChangeFinished = { onSeek(fraction) },
+        colors = SliderDefaults.colors(
+            thumbColor = colors.accent,
+            activeTrackColor = colors.accent,
+            inactiveTrackColor = colors.separator,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp)
+            .height(26.dp),
+    )
+}
+
+/** 右下角菜单按钮点开的单子：目录 / 书签 / 主题与字体。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReaderMenuSheet(
+    hasToc: Boolean,
+    bookmarkCount: Int,
+    bookmarked: Boolean,
+    colors: LumenColors,
+    onToc: () -> Unit,
+    onBookmarks: () -> Unit,
+    onStyle: () -> Unit,
+    onToggleBookmark: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.surface) {
+        Column(Modifier.padding(bottom = 18.dp)) {
+            if (hasToc) {
+                MenuRow("目录", colors = colors, onClick = onToc)
+                HorizontalDivider(color = colors.separator, modifier = Modifier.padding(horizontal = 22.dp))
+            }
+            MenuRow(
+                label = "书签",
+                trailing = if (bookmarkCount > 0) "$bookmarkCount" else null,
+                colors = colors,
+                onClick = onBookmarks,
             )
+            HorizontalDivider(color = colors.separator, modifier = Modifier.padding(horizontal = 22.dp))
+            MenuRow("主题与字体", colors = colors, onClick = onStyle)
+            HorizontalDivider(color = colors.separator, modifier = Modifier.padding(horizontal = 22.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleBookmark)
+                    .padding(horizontal = 22.dp, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (bookmarked) "取消这一页的书签" else "给这一页加书签",
+                    fontSize = 15.sp,
+                    color = colors.text,
+                )
+                Spacer(Modifier.weight(1f))
+                BookmarkGlyph(
+                    color = if (bookmarked) colors.accent else colors.textTertiary,
+                    filled = bookmarked,
+                    modifier = Modifier.size(17.dp),
+                )
+            }
         }
     }
 }
 
-/** 阅读设置：字号、行距、页边距。改一下即时重排，不用重开书。 */
+@Composable
+private fun MenuRow(
+    label: String,
+    colors: LumenColors,
+    trailing: String? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 22.dp, vertical = 15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, fontSize = 15.sp, color = colors.text)
+        Spacer(Modifier.weight(1f))
+        if (trailing != null) {
+            Text(trailing, fontSize = 13.sp, color = colors.textTertiary)
+        }
+    }
+}
+
+/** 阅读设置：主题、字体、对齐、字号、行距、边距、首行缩进。改一下即时重排，不用重开书。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReaderStyleSheet(
     style: ReaderStyle,
+    theme: ReaderTheme,
     colors: LumenColors,
+    onTheme: (ReaderTheme) -> Unit,
+    onFont: (ReaderFont) -> Unit,
+    onAlign: (ReaderAlign) -> Unit,
+    onIndent: (Int) -> Unit,
     onFontSize: (Int) -> Unit,
     onLineHeight: (Float) -> Unit,
     onMargin: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.surface) {
-        Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
-            Text("阅读设置", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(4.dp))
-            Text("调成看着顺眼的样子，换书也记得住。", color = colors.textTertiary, fontSize = 12.sp)
+        Column(
+            Modifier
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 26.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Text("主题与字体", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(14.dp))
+
+            // 纸色
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                listOf(
+                    ReaderTheme.PAPER,
+                    ReaderTheme.WHITE,
+                    ReaderTheme.GREEN,
+                    ReaderTheme.BLUE,
+                    ReaderTheme.INK,
+                    ReaderTheme.BLACK,
+                ).forEach { item ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(Color(item.swatch))
+                                .border(
+                                    width = if (theme == item) 2.dp else 1.dp,
+                                    color = if (theme == item) colors.accent else colors.separator,
+                                    shape = RoundedCornerShape(50),
+                                )
+                                .clickable { onTheme(item) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (theme == item) {
+                                Icon(
+                                    Icons.Filled.Check,
+                                    contentDescription = null,
+                                    tint = if (item.dark) Color.White else colors.text,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            item.label,
+                            fontSize = 9.sp,
+                            color = if (theme == item) colors.text else colors.textTertiary,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "「跟随系统」在设置里；这里选的是固定纸色。",
+                fontSize = 11.sp,
+                color = colors.textTertiary,
+            )
+
+            Spacer(Modifier.height(16.dp))
+            Text("字体", fontSize = 12.sp, color = colors.textSecondary)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ReaderFont.entries.forEach { item ->
+                    ChoiceChip(item.label, style.font == item, colors) { onFont(item) }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text("排版", fontSize = 12.sp, color = colors.textSecondary)
+            Spacer(Modifier.height(6.dp))
             StyleSlider(
                 label = "字号",
                 value = "${style.fontSize}",
@@ -861,7 +1144,39 @@ private fun ReaderStyleSheet(
                 colors = colors,
                 onChange = { onMargin((it / 4).roundToInt() * 4) },
             )
+            StyleSlider(
+                label = "首行缩进",
+                value = if (style.indent == 0) "无" else "${style.indent} 字",
+                current = style.indent.toFloat(),
+                range = ReaderStyle.INDENT_RANGE,
+                steps = 2,
+                colors = colors,
+                onChange = { onIndent(it.roundToInt()) },
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ReaderAlign.entries.forEach { item ->
+                    ChoiceChip(item.label, style.align == item, colors) { onAlign(item) }
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun ChoiceChip(label: String, selected: Boolean, colors: LumenColors, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) colors.accent else colors.surfaceMuted)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    ) {
+        Text(
+            label,
+            fontSize = 13.sp,
+            color = if (selected) Color.White else colors.textSecondary,
+        )
     }
 }
 
@@ -893,51 +1208,6 @@ private fun StyleSlider(
             ),
             modifier = Modifier.height(30.dp),
         )
-    }
-}
-
-@Composable
-private fun ReaderBottomBar(
-    fraction: Float,
-    colors: LumenColors,
-    onSeekPreview: (Float) -> Unit,
-    onSeek: (Float) -> Unit,
-    onStyle: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.page.copy(alpha = 0.97f))
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-    ) {
-        HorizontalDivider(color = colors.separator)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(
-                onClick = onStyle,
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                modifier = Modifier.height(32.dp).width(44.dp),
-            ) {
-                Text("Aa", color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            }
-            Text(
-                "${(fraction * 100).toInt()}%",
-                color = colors.textTertiary,
-                fontSize = 11.sp,
-                modifier = Modifier.width(36.dp),
-            )
-            Slider(
-                value = fraction.coerceIn(0f, 1f),
-                onValueChange = onSeekPreview,
-                onValueChangeFinished = { onSeek(fraction) },
-                colors = SliderDefaults.colors(
-                    thumbColor = colors.accent,
-                    activeTrackColor = colors.accent,
-                    inactiveTrackColor = colors.separator,
-                ),
-                modifier = Modifier.weight(1f).height(32.dp),
-            )
-        }
     }
 }
 

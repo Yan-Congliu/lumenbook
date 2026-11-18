@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.lumenbook.reader.data.AppContainer
 import com.lumenbook.reader.data.Book
 import com.lumenbook.reader.data.BookFormat
+import com.lumenbook.reader.data.ReaderTheme
 import com.lumenbook.reader.importer.TxtToEpub
 import com.lumenbook.reader.ui.theme.LumenColors
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +48,8 @@ fun TxtReaderScreen(
     book: Book,
     container: AppContainer,
     colors: LumenColors,
+    theme: ReaderTheme,
+    onThemeChange: (ReaderTheme) -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -75,6 +78,8 @@ fun TxtReaderScreen(
             ),
             container = container,
             colors = colors,
+            theme = theme,
+            onThemeChange = onThemeChange,
             onClose = onClose,
         )
     }

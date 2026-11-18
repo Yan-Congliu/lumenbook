@@ -1,6 +1,7 @@
 package com.lumenbook.reader.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,7 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumenbook.reader.BuildConfig
 import com.lumenbook.reader.data.ApkInstaller
-import com.lumenbook.reader.data.Appearance
+import com.lumenbook.reader.data.LibraryStyle
+import com.lumenbook.reader.data.ReaderTheme
 import com.lumenbook.reader.data.RemoteRelease
 import com.lumenbook.reader.data.UpdateChecker
 import com.lumenbook.reader.data.UpdateResult
@@ -52,9 +57,15 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
-    appearance: Appearance,
-    onAppearanceChange: (Appearance) -> Unit,
+    theme: ReaderTheme,
+    onThemeChange: (ReaderTheme) -> Unit,
+    libraryStyle: LibraryStyle,
+    onColumnsChange: (Int) -> Unit,
+    onCoverRadiusChange: (Int) -> Unit,
+    onShowAuthorChange: (Boolean) -> Unit,
     backgroundImage: String?,
+    backgroundDim: Float,
+    onBackgroundDimChange: (Float) -> Unit,
     onPickBackground: () -> Unit,
     onClearBackground: () -> Unit,
 ) {
@@ -121,11 +132,62 @@ fun SettingsScreen(
 
         SectionTitle("外观")
         Card {
-            ChoiceRow("跟随系统", appearance == Appearance.SYSTEM) { onAppearanceChange(Appearance.SYSTEM) }
+            ChoiceRow("跟随系统", theme == ReaderTheme.SYSTEM) { onThemeChange(ReaderTheme.SYSTEM) }
             Divider()
-            ChoiceRow("浅色（米纸）", appearance == Appearance.LIGHT) { onAppearanceChange(Appearance.LIGHT) }
+            Column(Modifier.padding(horizontal = 22.dp, vertical = 14.dp)) {
+                Text("纸张主题", fontSize = 13.sp, color = colors.textSecondary)
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    listOf(
+                        ReaderTheme.PAPER,
+                        ReaderTheme.WHITE,
+                        ReaderTheme.GREEN,
+                        ReaderTheme.BLUE,
+                        ReaderTheme.INK,
+                        ReaderTheme.BLACK,
+                    ).forEach { item ->
+                        ThemeSwatch(item, selected = theme == item) { onThemeChange(item) }
+                    }
+                }
+            }
+        }
+
+        SectionTitle("书库外观")
+        Card {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("每行本数", fontSize = 15.sp, color = colors.text)
+                Spacer(Modifier.weight(1f))
+                SegButton("三列", libraryStyle.columns == 3) { onColumnsChange(3) }
+                Spacer(Modifier.width(8.dp))
+                SegButton("四列", libraryStyle.columns == 4) { onColumnsChange(4) }
+            }
             Divider()
-            ChoiceRow("深色（墨纸）", appearance == Appearance.DARK) { onAppearanceChange(Appearance.DARK) }
+            SliderRow(
+                label = "封面圆角",
+                value = libraryStyle.coverRadius.toFloat(),
+                range = LibraryStyle.RADIUS_RANGE,
+                valueText = "${libraryStyle.coverRadius} dp",
+                onChange = { onCoverRadiusChange(it.toInt()) },
+            )
+            Divider()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("显示作者", fontSize = 15.sp, color = colors.text)
+                Spacer(Modifier.weight(1f))
+                Switch(
+                    checked = libraryStyle.showAuthor,
+                    onCheckedChange = onShowAuthorChange,
+                )
+            }
         }
 
         SectionTitle("页面背景")
@@ -142,6 +204,14 @@ fun SettingsScreen(
             if (backgroundImage != null) {
                 Divider()
                 ChoiceRow("清除背景图", selected = false) { onClearBackground() }
+                Divider()
+                SliderRow(
+                    label = "压暗程度",
+                    value = backgroundDim,
+                    range = 0f..0.7f,
+                    valueText = "${(backgroundDim * 100).toInt()}%",
+                    onChange = onBackgroundDimChange,
+                )
             }
         }
         Text(
@@ -181,9 +251,97 @@ fun SettingsScreen(
     }
 }
 
+/** 纸色小圆：选了就打勾。 */
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
+private fun ThemeSwatch(theme: ReaderTheme, selected: Boolean, onClick: () -> Unit) {
+    val colors = LocalLumenColors.current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .combinedClickable(onClick = onClick, onLongClick = null)
+            .padding(vertical = 2.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color(theme.swatch))
+                .border(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = if (selected) colors.accent else colors.separator,
+                    shape = RoundedCornerShape(50),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = if (theme.dark) Color.White else colors.text,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(5.dp))
+        Text(
+            text = theme.label,
+            fontSize = 10.sp,
+            color = if (selected) colors.text else colors.textTertiary,
+        )
+    }
+}
+
+/** 小的双段选择按钮（每行本数这种）。 */
+@Composable
+private fun SegButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = LocalLumenColors.current
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) colors.accent else colors.surfaceMuted)
+            .combinedClickable(onClick = onClick, onLongClick = null)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            color = if (selected) Color.White else colors.textSecondary,
+        )
+    }
+}
+
+/** 带数值显示的滑条行。 */
+@Composable
+private fun SliderRow(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    valueText: String,
+    onChange: (Float) -> Unit,
+) {
+    val colors = LocalLumenColors.current
+    Column(Modifier.padding(horizontal = 22.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontSize = 15.sp, color = colors.text)
+            Spacer(Modifier.weight(1f))
+            Text(valueText, fontSize = 12.sp, color = colors.textSecondary)
+        }
+        Slider(
+            value = value.coerceIn(range.start, range.endInclusive),
+            onValueChange = onChange,
+            valueRange = range,
+            colors = SliderDefaults.colors(
+                thumbColor = colors.accent,
+                activeTrackColor = colors.accent,
+                inactiveTrackColor = colors.surfaceMuted,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {    Text(
         text = text,
         fontSize = 12.sp,
         color = LocalLumenColors.current.textSecondary,
