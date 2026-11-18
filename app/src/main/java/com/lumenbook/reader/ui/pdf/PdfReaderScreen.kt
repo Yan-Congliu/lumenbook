@@ -87,19 +87,32 @@ private class PdfDocument(file: File) : Closeable {
 
     val pageCount: Int get() = renderer.pageCount
 
+    /** 上一次渲染失败的原因：真机上看不到 logcat，只能把原因画到屏幕上。 */
+    var lastError: String? = null
+        private set
+
     suspend fun render(index: Int, widthPx: Int): Bitmap? = withContext(Dispatchers.IO) {
         mutex.withLock {
-            if (index !in 0 until pageCount || widthPx <= 0) return@withLock null
-            val page = runCatching { renderer.openPage(index) }.getOrNull() ?: return@withLock null
+            lastError = null
+            if (index !in 0 until pageCount || widthPx <= 0) {
+                lastError = "页码越界"
+                return@withLock null
+            }
+            val page = runCatching { renderer.openPage(index) }.getOrElse { t ->
+                lastError = "openPage 失败：${t.javaClass.simpleName} ${t.message.orEmpty()}"
+                return@withLock null
+            }
             try {
                 val scale = widthPx.toFloat() / page.width
                 val height = (page.height * scale).roundToInt().coerceAtLeast(1)
-                val bitmap = Bitmap.createBitmap(widthPx, height, Bitmap.Config.RGB_565)
+                // PdfRenderer 只接受 ARGB_8888；RGB_565 会直接抛异常，页面一片空白（0.6.6 修）。
+                val bitmap = Bitmap.createBitmap(widthPx, height, Bitmap.Config.ARGB_8888)
                 // PDF 的页面一般是白纸，先铺白再画，免得黑底。
                 bitmap.eraseColor(Color.WHITE)
                 page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                 bitmap
-            } catch (e: Throwable) {
+            } catch (t: Throwable) {
+                lastError = "render 失败：${t.javaClass.simpleName} ${t.message.orEmpty()}"
                 null
             } finally {
                 runCatching { page.close() }
@@ -132,8 +145,12 @@ fun PdfReaderScreen(
         with(density) { configuration.screenWidthDp.dp.roundToPx() }
     }
 
+    var openError by remember(book.localPath) { mutableStateOf<String?>(null) }
     val document = remember(book.localPath) {
-        runCatching { PdfDocument(File(book.localPath)) }.getOrNull()
+        runCatching { PdfDocument(File(book.localPath)) }.getOrElse { t ->
+            openError = "${t.javaClass.simpleName} ${t.message.orEmpty()}"
+            null
+        }
     }
 
     DisposableEffect(book.localPath) {
@@ -146,6 +163,10 @@ fun PdfReaderScreen(
                 Text("打不开这个 PDF", color = colors.text, fontSize = 16.sp)
                 Spacer(Modifier.height(10.dp))
                 Text("文件可能损坏或加了密码。", color = colors.textTertiary, fontSize = 13.sp)
+                openError?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, color = colors.textTertiary, fontSize = 11.sp)
+                }
                 Spacer(Modifier.height(18.dp))
                 TextButton(onClick = onClose) { Text("返回书库", color = colors.accent) }
             }
@@ -299,16 +320,34 @@ private fun PdfPage(
     onRightTap: () -> Unit,
 ) {
     var bitmap by remember(index, widthPx) { mutableStateOf<Bitmap?>(null) }
+    var error by remember(index, widthPx) { mutableStateOf<String?>(null) }
+    var attempt by remember(index, widthPx) { mutableIntStateOf(0) }
     var scale by remember(index) { mutableFloatStateOf(1f) }
     var offset by remember(index) { androidx.compose.runtime.mutableStateOf(Offset.Zero) }
 
-    LaunchedEffect(index, widthPx) {
-        bitmap = document.render(index, widthPx)
+    LaunchedEffect(index, widthPx, attempt) {
+        bitmap = null
+        error = null
+        val rendered = document.render(index, widthPx)
+        bitmap = rendered
+        if (rendered == null) error = document.lastError ?: "未知原因"
     }
 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val image = bitmap
-        if (image == null) {
+        val failure = error
+        if (image == null && failure != null) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(28.dp),
+            ) {
+                Text("这一页渲染失败", color = colors.text, fontSize = 15.sp)
+                Spacer(Modifier.height(8.dp))
+                Text(failure, color = colors.textTertiary, fontSize = 12.sp)
+                Spacer(Modifier.height(14.dp))
+                TextButton(onClick = { attempt++ }) { Text("重试", color = colors.accent) }
+            }
+        } else if (image == null) {
             Text("正在渲染…", color = colors.textTertiary, fontSize = 12.sp)
         } else {
             Image(
