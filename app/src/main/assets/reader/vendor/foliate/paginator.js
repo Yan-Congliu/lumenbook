@@ -887,6 +887,9 @@ export class Paginator extends HTMLElement {
         // LUMENBOOK PATCH: 轻扫判定改成「拖动超过页宽 10% 或速度 ≥ 0.20 px/ms」。
         // 原式是 (start + end) / 2 + velocity * size，等于要求拖满一整页才肯翻，
         // 真机上就是「页面跟着手指走、一松手又弹回原页」。
+        // 另外：轻点翻页时 reader.js 会先调 next()/prev()，紧接着 paginator 自己的
+        // touchend 也会跑到这里 snap()，把刚翻过去的那页又滚回来 —— 300ms 内直接跳过。
+        if (Date.now() - (globalThis.__lumenTapFlipAt || 0) < 300) return
         const velocity = this.#vertical ? vy : vx
         const { pages, size } = this
         if (this.scrolled || !size) {

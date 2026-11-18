@@ -399,10 +399,36 @@ CBZ / FB2 验证            scripts/make_test_misc.py 自造样书，桌面全�
 **注意**：新版 QQ/微信把文件放进了 `Android/data/<包名>/...`，那个位置安卓 11+ 任何第三方 App 都读不到，
 SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用打开 → 保存到本机」。
 
+## 阶段 8：点击分区改成 30/40/30 + 轻点翻页不再被 snap 抢（0.6.12）
+
+用户反馈（原话）：「点击翻页只能向后，不能向前，只有很靠左点击的时候才会向后翻页，而且点击次数多了还会没反应。
+应该设置为左侧 30% 向左翻页，右侧 30% 向右翻页，中间 40% 点击后出现左上右上角的退出和章节目录还有下面的进度条。
+保留小说名和章节名。同时出现前后均不能遮挡正文，还有加上能根据自带的可以点击的目录跳转到相应位置的功能，并保留右上角的目录。」
+
+三个真问题（都在模拟器上复现了）：
+
+1. **第一下点击被吃掉**：安卓 WebView 没拿到焦点时，第一次触摸只用来「聚焦」，那一下不进正文。
+   → `ReaderScreen.kt` 在 `onPageFinished` 里 `view.isFocusableInTouchMode = true; view.requestFocus()`。
+2. **轻点翻页被 paginator 的 snap() 抢回去**：`next()`/`prev()` 之后同一次 touchend 还会跑到
+   paginator 的 `snap()`，它按「位移 0」判定不翻页，把刚翻过去的那页又滚回来 —— 表现就是「点很多次才成功」。
+   → `reader.js` 的 `tapZone()` 在调 next/prev 前打 `globalThis.__lumenTapFlipAt = Date.now()`；
+   `paginator.js` 补丁里 `snap()` 开头 `if (Date.now() - (globalThis.__lumenTapFlipAt || 0) < 300) return`
+   （`scripts/vendor_foliate.py` 的 `NEW_SNAP` 常量同步改了，重新 vendor 会带上）。
+3. **点击分区的比例算错**：原来用**外层 window 宽度**去除 clientX，但正文 iframe 的排版宽度比外层窄 20 多像素
+   （留给滚动条），结果右 25% 被算成中间区、点了只呼出工具栏。
+   → `attachDocGestures` 里改用**正文文档自己的 `win.innerWidth`**。
+
+分区常量（`reader.js`）：`ZONE_LEFT = 0.30`、`ZONE_RIGHT = 0.70`（左 30% 上一页、右 30% 下一页、中间 40% 呼出/收起工具栏）。
+
+模拟器实测（Android 16，1080x2400）：
+- 右 75% 点一下 → 第一章 37% → 第二章 69%；左 18% 点一下 → 回到第一章 37%（release 包同样通过）。
+- 中间点一下 → 工具栏隐藏（正文顶到状态栏下面），再点 → 出来，正文被推开、不遮挡。
+- 右上角目录 → 三个章节列表 → 点「第三章 长夜」→ 直接跳过去（100%）。
+
 ## 下一步
 
-1. 用户验收 0.6.11：重点看三件事 —— 导入（选文件夹批量扫 + 常用位置直达）、漫画能翻页（横滑/点右半边）、EPUB 轻扫码翻页。
-2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.11-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
+1. 用户验收 0.6.12：点击分区（左 30 / 中 40 / 右 30）、第一下就响应、工具栏不遮正文、目录能跳。
+2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.12-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
 3. MOBI/AZW3 真实样书暂不追（用户明确说不做），自造 MOBI6 样书已确认解析链路与目录。
 4. 阶段 8 剩下：PDF 目录（需要换 PDF 解析库）、按标签/系列分组、阅读页页码（foliate 只给百分比）。
 

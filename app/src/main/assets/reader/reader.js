@@ -409,7 +409,18 @@ async function goToCfi(cfi) {
   }
 }
 
-// ---- 点击分区：左右翻页，中间呼出工具栏 ----
+// ---- 点击分区：左 30% 上一页、右 30% 下一页、中间 40% 呼出/收起工具栏 ----
+const ZONE_LEFT = 0.30
+const ZONE_RIGHT = 0.70
+
+/** ratio = 点击位置占屏宽的比例（0..1） */
+function tapZone(ratio) {
+  const mark = () => { globalThis.__lumenTapFlipAt = Date.now() }
+  if (ratio < ZONE_LEFT) { mark(); prev() }
+  else if (ratio > ZONE_RIGHT) { mark(); next() }
+  else bridge('onToggleChrome')
+}
+
 let downAt = null
 window.addEventListener('pointerdown', (e) => {
   downAt = { x: e.clientX, y: e.clientY, t: Date.now() }
@@ -423,9 +434,7 @@ window.addEventListener('pointerup', (e) => {
   // 拖动翻页交给 foliate 自己处理，这里只认「轻点」
   if (dx > 12 || dy > 12 || dt > 600) return
   const ratio = e.clientX / window.innerWidth
-  if (ratio < 0.28) prev()
-  else if (ratio > 0.72) next()
-  else bridge('onToggleChrome')
+  tapZone(ratio)
 }, true)
 
 /** 固定版式（漫画 CBZ / 固定版式 EPUB）自己没有手势，横滑也得我们来翻。 */
@@ -451,7 +460,9 @@ function attachDocGestures(doc) {
     const dy = y - down.y
     const dt = Date.now() - down.t
     down = null
-    const w = window.innerWidth || 360
+    // 用**正文文档自己的宽度**算比例：iframe 的实际排版宽度比外层 window 窄一点
+    // （留给滚动条的 20 多像素），拿外层宽度算会把右 25% 算成中间区，点击就该翻页的位置变成呼出工具栏。
+    const w = win.innerWidth || window.innerWidth || 360
     // 竖着划：交给文档自己滚
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) return
     if (Math.abs(dx) > 12) {
@@ -463,10 +474,7 @@ function attachDocGestures(doc) {
       return
     }
     if (dt > 600) return
-    const ratio = x / w
-    if (ratio < 0.28) prev()
-    else if (ratio > 0.72) next()
-    else bridge('onToggleChrome')
+    tapZone(x / w)
   }
   // 触屏用 touch 事件（WebView 里 pointer 系列在 iframe 内可能收不到），桌面用 pointer
   win.addEventListener('touchstart', (e) => {

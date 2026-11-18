@@ -403,6 +403,10 @@ fun ReaderScreen(
             bridge = bridge,
             background = colors.page.toArgb(),
             onPageFinished = { view ->
+                // 安卓 WebView 在没拿到焦点时，第一次点击只用来「聚焦」，正文里那一次点击就丢了 ——
+                // 用户感受到的就是「第一次点没反应」。加载完主动要焦点。
+                view.isFocusableInTouchMode = true
+                view.requestFocus()
                 // 兜底：即使 JS 桥没连上（收不到 onPageLoad），也主动把书推给页面。
                 // evaluateJavascript 不依赖 addJavascriptInterface。
                 if (!opened) {
