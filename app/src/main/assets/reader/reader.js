@@ -440,8 +440,9 @@ const ZONE_RIGHT = 0.70
 /** ratio = 点击位置占屏宽的比例（0..1） */
 function tapZone(ratio) {
   const mark = () => { globalThis.__lumenTapFlipAt = Date.now() }
-  if (ratio < ZONE_LEFT) { mark(); prev() }
-  else if (ratio > ZONE_RIGHT) { mark(); next() }
+  // 翻页时把工具栏收起来（工具栏本来就该在翻页后消失）
+  if (ratio < ZONE_LEFT) { mark(); bridge('onHideChrome'); prev() }
+  else if (ratio > ZONE_RIGHT) { mark(); bridge('onHideChrome'); next() }
   else bridge('onToggleChrome')
 }
 
@@ -477,12 +478,18 @@ function attachDocGestures(doc) {
   if (!win) return
   doc.__lumenGestures = true
   let down = null
-  const onDown = (x, y) => { down = { x, y, t: Date.now() } }
+  const onDown = (x, y) => { down = { x, y, t: Date.now(), max: 0 } }
+  const onMove = (x, y) => {
+    if (!down) return
+    const d = Math.hypot(x - down.x, y - down.y)
+    if (d > down.max) down.max = d
+  }
   const onUp = (x, y) => {
     if (!down) return
     const dx = x - down.x
     const dy = y - down.y
     const dt = Date.now() - down.t
+    const maxDist = Math.max(down.max, Math.hypot(dx, dy))
     down = null
     // 用**正文文档自己的宽度**算比例：iframe 的实际排版宽度比外层 window 窄一点
     // （留给滚动条的 20 多像素），拿外层宽度算会把右 25% 算成中间区，点击就该翻页的位置变成呼出工具栏。
@@ -491,13 +498,16 @@ function attachDocGestures(doc) {
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) return
     if (Math.abs(dx) > 12) {
       if (isFixedLayout() && Math.abs(dx) >= w * 0.12) {
+        bridge('onHideChrome')
         if (dx < 0) next()
         else prev()
       }
       // 可重排的书：拖动已经由 paginator 处理，这里不插手
       return
     }
-    if (dt > 600) return
+    // 真·轻点：手指几乎没动、也没按太久。
+    // 之前只看首尾位移，轻扫结束时手指偶尔回到起点附近就会被当成点击，于是「一划就弹出工具栏」。
+    if (maxDist > 8 || dt > 400) return
     // 正文 iframe 有两种情形：
     //  1) 普通书：iframe 宽度 = 屏幕宽度，clientX 直接就是屏幕坐标；
     //  2) 单文档超长书（中国2185 这种）：整个正文排成一条 10 万像素的横向长带，
@@ -518,13 +528,21 @@ function attachDocGestures(doc) {
   win.addEventListener('touchstart', (e) => {
     const t = e.touches[0]
     if (t) onDown(t.clientX, t.clientY)
+    // 碰一下就通知外层：工具栏的 6 秒自动收起要重新计时
+    bridge('onActivity')
+  }, { capture: true, passive: true })
+  win.addEventListener('touchmove', (e) => {
+    const t = e.touches[0]
+    if (t) onMove(t.clientX, t.clientY)
   }, { capture: true, passive: true })
   win.addEventListener('touchend', (e) => {
     const t = e.changedTouches[0]
     if (t) onUp(t.clientX, t.clientY)
+    bridge('onActivity')
   }, { capture: true, passive: true })
   if (!('ontouchstart' in win)) {
     win.addEventListener('pointerdown', (e) => onDown(e.clientX, e.clientY), true)
+    win.addEventListener('pointermove', (e) => onMove(e.clientX, e.clientY), true)
     win.addEventListener('pointerup', (e) => onUp(e.clientX, e.clientY), true)
   }
 }

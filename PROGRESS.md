@@ -447,10 +447,33 @@ SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用�
 实测（release 包，Android 16 模拟器）：《中国2185》45% → 连点 4 下 → 46%（约 4 页）；左 18% 连点回翻；中间点呼出工具栏正常。
 普通书（TXT 派生 EPUB / EPUB 3 章）点击分区与上一版一致。
 
+## 阶段 8：工具栏改成覆盖层 + 手势分家（0.6.14）
+
+用户反馈（原话）：「我滑动翻页的时候还会触发点击出现菜单栏，改一下，滑动的时候不要点击触发菜单栏，菜单栏出现后再次点击中间或者执行翻页动作就收回，
+有过渡动画，渐入渐出吧，无人触碰就 6 秒后自动消失。还有，菜单栏出现的时候排版会有改变，改成菜单栏出现后排版不变，遮挡就遮挡吧，有个遮挡的柔和的过渡动画就行，
+不然点几次文章就不知道跑哪里去了。」
+
+四件事，全部落地：
+
+1. **滑动不再被当成点击**：`attachDocGestures` 现在用 `touchmove` 记**手指最大位移**（`down.max`），
+   只有 `maxDist <= 8px && 停留 <= 400ms` 才算轻点；横滑/轻扫一律不触发工具栏。
+2. **工具栏出现后不再重排正文**：删掉了「把栏高推给网页」的 `setInsets(statusBar+56, navBar+44)`，
+   改成只让开状态栏和导航栏（`setInsets(statusBarDp, navBarDp)`，`LaunchedEffect(ui.ready)` 只调一次）。
+   工具栏变成纯覆盖层：`AnimatedVisibility(fadeIn(tween(190)) / fadeOut(tween(170)))`，
+   里面是两道柔和渐变遮罩（顶部 150dp 从 `colors.page` 96% 透明度渐隐，底部 92% 渐显）。
+3. **翻页/点中间就收回**：`tapZone()` 在左右区翻页前 `bridge('onHideChrome')`；中间区仍是 `onToggleChrome`。
+4. **6 秒无人触碰自动消失**：JS 在 `touchstart`/`touchend` 调 `bridge('onActivity')`，Kotlin 的
+   `LaunchedEffect(ui.chromeVisible, ui.activity) { delay(6_000); chromeVisible = false }` 每次触摸重新计时。
+
+实测（release 包 0.6.14，Android 16 模拟器，用用户提供的 `out-宋体版/*.epub`）：
+- 连划两次 → 页翻了、工具栏**没**出现；连点中间 → 淡入、再点 → 淡出。
+- 展开工具栏后等 7 秒 → 自动收起；**收起后的截图与出现前的截图 sha256 完全一致**，证明没有任何重排。
+- 42 MB 的《二十四史（含清史稿）》能正常导入并打开（显示「主目录」页）。
+
 ## 下一步
 
-1. 用户验收 0.6.13：点右边往前翻、点左边往回翻、连点不丢、工具栏不遮正文、目录可跳。
-2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.13-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
+1. 用户验收 0.6.14：滑动不再弹工具栏、工具栏渐入渐出、6 秒自动收、排版不跳。
+2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.14-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
 3. MOBI/AZW3 真实样书暂不追（用户明确说不做），自造 MOBI6 样书已确认解析链路与目录。
 4. 阶段 8 剩下：PDF 目录（需要换 PDF 解析库）、按标签/系列分组、阅读页页码（foliate 只给百分比）。
 

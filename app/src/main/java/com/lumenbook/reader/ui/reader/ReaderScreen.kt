@@ -12,6 +12,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
@@ -53,12 +54,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
@@ -109,6 +112,8 @@ private class ReaderUi {
     var toc by mutableStateOf<List<TocNode>>(emptyList())
     var chromeVisible by mutableStateOf(true)
     var cfi by mutableStateOf<String?>(null)
+    /** 每次用户碰一下正文就 +1，用来给「自动收起工具栏」的 6 秒计时续命。 */
+    var activity by mutableIntStateOf(0)
 }
 
 private fun BookFormat.usesFoliate(): Boolean = when (this) {
@@ -201,6 +206,8 @@ class ReaderBridge(
     private val relocated: (String?, String?) -> Unit,
     private val failed: (String?) -> Unit,
     private val toggled: () -> Unit,
+    private val touched: () -> Unit,
+    private val hidden: () -> Unit,
 ) {
     @JavascriptInterface
     fun onBoot() {
@@ -235,6 +242,18 @@ class ReaderBridge(
     @JavascriptInterface
     fun onToggleChrome() {
         main.post { toggled() }
+    }
+
+    /** 用户碰了正文（点或划）：给自动收起计时续命。 */
+    @JavascriptInterface
+    fun onActivity() {
+        main.post { touched() }
+    }
+
+    /** 翻页时把工具栏收起来。 */
+    @JavascriptInterface
+    fun onHideChrome() {
+        main.post { hidden() }
     }
 
     @JavascriptInterface
@@ -380,6 +399,8 @@ fun ReaderScreen(
                 if (!ui.ready) ui.error = message ?: "打开失败"
             },
             toggled = { ui.chromeVisible = !ui.chromeVisible },
+            touched = { ui.activity += 1 },
+            hidden = { ui.chromeVisible = false },
         )
     }
 
@@ -458,8 +479,9 @@ fun ReaderScreen(
         }
     }
 
-    // 正文要躲开顶栏/底栏（否则文字会从半透明栏下面透出来），
-    // 但又不能让纸张背景出现断层——所以把栏的高度推给网页，由它自己让出位置。
+    // 正文只躲开状态栏和导航栏，**不再**因为工具栏出现而重排。
+    // 之前把栏高推给网页，工具栏一出一收正文就整体跳一次，点几下就不知道读到哪了。
+    // 现在工具栏是纯覆盖层（带渐入渐出的半透明遮罩），排版自始至终不动。
     //
     // ⚠️ 单位：WindowInsets 给的是物理像素，而 WebView 里的 CSS px 等于 dp
     // （WebView 的 devicePixelRatio 就等于屏幕 density）。直接把 px 传给 CSS 会放大 2~4 倍，
@@ -468,13 +490,18 @@ fun ReaderScreen(
     val scale = density.density
     val statusBarDp = WindowInsets.statusBars.getTop(density) / scale
     val navBarDp = WindowInsets.navigationBars.getBottom(density) / scale
-    LaunchedEffect(ui.chromeVisible, ui.ready) {
-        val barTopDp = if (ui.chromeVisible) 56f else 0f
-        val barBottomDp = if (ui.chromeVisible) 44f else 0f
+    LaunchedEffect(ui.ready) {
         webView.evaluateJavascript(
-            "window.lumen && window.lumen.setInsets(${statusBarDp + barTopDp}, ${navBarDp + barBottomDp})",
+            "window.lumen && window.lumen.setInsets($statusBarDp, $navBarDp)",
             null,
         )
+    }
+
+    // 工具栏：6 秒没人碰就自己收起来。任何一次触摸（activity 变化）都重新计时。
+    LaunchedEffect(ui.chromeVisible, ui.activity) {
+        if (!ui.chromeVisible) return@LaunchedEffect
+        delay(6_000)
+        if (ui.chromeVisible) ui.chromeVisible = false
     }
 
     // 看门狗：真机上看不到日志，所以把「卡在哪一步」直接写在屏幕上。
@@ -497,27 +524,56 @@ fun ReaderScreen(
     Box(Modifier.fillMaxSize().background(colors.page)) {
         AndroidView(modifier = Modifier.fillMaxSize(), factory = { webView })
 
-        AnimatedVisibility(visible = ui.chromeVisible, enter = fadeIn(), exit = fadeOut()) {
-            Column(Modifier.fillMaxSize()) {
-                ReaderTopBar(
-                    title = book.title,
-                    subtitle = ui.chapter,
-                    colors = colors,
-                    bookmarked = currentBookmarked,
-                    onBookmark = toggleBookmark,
-                    onBack = { finish() },
-                    onToc = { if (ui.toc.isNotEmpty() || bookmarks.isNotEmpty()) showToc = true },
+        // 工具栏：覆盖在正文上，淡入淡出。正文不重排，只被柔和地遮一下。
+        AnimatedVisibility(
+            visible = ui.chromeVisible,
+            enter = fadeIn(animationSpec = tween(190)) ,
+            exit = fadeOut(animationSpec = tween(170)),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                // 上下两道柔和的遮罩，让文字在栏下面自然暗下去，而不是被硬切一刀。
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(colors.page.copy(alpha = 0.96f), colors.page.copy(alpha = 0f)),
+                            ),
+                        ),
                 )
-                Spacer(Modifier.weight(1f))
-                ReaderBottomBar(
-                    fraction = ui.fraction,
-                    colors = colors,
-                    onSeekPreview = { value -> ui.fraction = value },
-                    onSeek = { value ->
-                        webView.evaluateJavascript("window.lumen.goToFraction($value)", null)
-                    },
-                    onStyle = { showStyle = true },
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                0.72f to Color.Transparent,
+                                1f to colors.page.copy(alpha = 0.92f),
+                            ),
+                        ),
                 )
+                Column(Modifier.fillMaxSize()) {
+                    ReaderTopBar(
+                        title = book.title,
+                        subtitle = ui.chapter,
+                        colors = colors,
+                        bookmarked = currentBookmarked,
+                        onBookmark = toggleBookmark,
+                        onBack = { finish() },
+                        onToc = { if (ui.toc.isNotEmpty() || bookmarks.isNotEmpty()) showToc = true },
+                    )
+                    Spacer(Modifier.weight(1f))
+                    ReaderBottomBar(
+                        fraction = ui.fraction,
+                        colors = colors,
+                        onSeekPreview = { value -> ui.fraction = value },
+                        onSeek = { value ->
+                            webView.evaluateJavascript("window.lumen.goToFraction($value)", null)
+                        },
+                        onStyle = { showStyle = true },
+                    )
+                }
             }
         }
 
