@@ -536,6 +536,18 @@ SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用�
 实测（Android 16 模拟器，debug 包）：点中间 → 左上返回箭头 + 右上空心书签 + 底「19 / 6967」+ 右下 ☰，没有进度条；
 点右上书签 → 图标变实心；点 ☰ → 菜单只有 目录 / 书签(1) / 主题与字体。
 
+## 阶段 8：纸张主题改成横向可滑动（0.6.18）
+
+用户发来真机截图：设置页「纸张主题」六个圆点排太满，「纯黑」的标签被挤成「纯 / 黑」两行；
+要求「给他做一个左右滑动的，这样子后面加了更多颜色也能滑一下就看见」。
+
+- `ui/settings/SettingsScreen.kt`：主题行改成 `Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()))`，
+  `horizontalArrangement = spacedBy(6.dp)`；`ThemeSwatch` 固定 `width(52.dp)`，标签 `maxLines = 1` / `softWrap = false`。
+- `ui/reader/ReaderScreen.kt` 的「主题与字体」面板同样处理（每个纸色列 `width(50.dp)`、标签不换行）。
+
+实测（Android 16 模拟器，深色模式）：六个纸色一行排开、标签单行，行本身可横滑；圆点显示的是各主题在深色模式下的实际纸色
+（护眼绿=墨绿、灰蓝=深蓝、墨黑/纯黑=各自深色）。
+
 ## 下一步
 
 1. 用户验收 0.6.15：外观设置（纸色/字体/排版/书库外观）+ 阅读页信息层与菜单按钮。

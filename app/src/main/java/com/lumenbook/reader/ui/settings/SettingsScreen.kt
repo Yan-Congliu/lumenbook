@@ -3,6 +3,7 @@ package com.lumenbook.reader.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -139,7 +140,13 @@ fun SettingsScreen(
             Column(Modifier.padding(horizontal = 22.dp, vertical = 14.dp)) {
                 Text("纸张主题", fontSize = 13.sp, color = colors.textSecondary)
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                // 横向可滑动：以后加更多纸色也放得下，不会挤成两行
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     listOf(
                         ReaderTheme.PAPER,
                         ReaderTheme.WHITE,
@@ -262,6 +269,7 @@ private fun ThemeSwatch(theme: ReaderTheme, selected: Boolean, onClick: () -> Un
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
+            .width(52.dp)
             .combinedClickable(onClick = onClick, onLongClick = null)
             .padding(vertical = 2.dp),
     ) {
@@ -290,6 +298,8 @@ private fun ThemeSwatch(theme: ReaderTheme, selected: Boolean, onClick: () -> Un
         Text(
             text = theme.label,
             fontSize = 10.sp,
+            maxLines = 1,
+            softWrap = false,
             color = if (selected) colors.text else colors.textTertiary,
         )
     }

@@ -1,6 +1,7 @@
 package com.lumenbook.reader.ui.reader
 
 import android.annotation.SuppressLint
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Menu
@@ -1001,8 +1002,13 @@ private fun ReaderStyleSheet(
             Text("主题与字体", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(14.dp))
 
-            // 纸色
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            // 纸色（横向可滑动，以后加更多纸色也放得下）
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 listOf(
                     ReaderTheme.PAPER,
                     ReaderTheme.WHITE,
@@ -1011,7 +1017,10 @@ private fun ReaderStyleSheet(
                     ReaderTheme.INK,
                     ReaderTheme.BLACK,
                 ).forEach { item ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.width(50.dp),
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
@@ -1038,6 +1047,8 @@ private fun ReaderStyleSheet(
                         Text(
                             item.label,
                             fontSize = 9.sp,
+                            maxLines = 1,
+                            softWrap = false,
                             color = if (theme == item) colors.text else colors.textTertiary,
                         )
                     }
