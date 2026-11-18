@@ -379,12 +379,33 @@ CBZ / FB2 验证            scripts/make_test_misc.py 自造样书，桌面全�
 - 导入页补了一句提示：安卓不允许直接选「下载」根目录（真机上会报「无法使用此文件夹」），要么选子文件夹，
   要么新建「我的图书」。这条是模拟器实测发现的，不是猜的。
 
+## 阶段 8：导入页「常用位置」直达（0.6.11）
+
+朋友给的判断：手机的遍历/选择器不会把每个文件夹都打开到底，而且 QQ、微信、浏览器下载的文件位置是**固定**的，
+应该让 App 直接去读那些固定目录。这个判断一半对：
+
+- 对的一半：书在哪儿取决于**各个 App 自己存到哪**，让用户自己去一层层翻不现实。
+- 不对的一半：鎏书自己的扫描没有「只扫几层」的问题（`MAX_DEPTH = 12`，模拟器里三层深的 `小说/短篇/` 照样扫到）。
+  真正的卡点是**系统文件夹选择器一打开停在哪儿**。
+
+所以做的是「常用位置」四个快捷按钮（`ui/imports/ImportScreen.kt`）：
+
+- `initialTreeUri(path)` = `DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:<path>")`，
+  直接作为 `ActivityResultContracts.OpenDocumentTree()` 的 input，系统选择器就停在那一步。
+- 四档：`我的图书`、`Download`、`tencent/QQfile_recv`（QQ 接收的文件）、`tencent/MicroMsg/Download`（微信下载）。
+- 目录不存在时 DocumentsUI 退回上一级，不会崩。
+- 模拟器实测：点「QQ 接收的文件」→ 选择器直接停在 `tencent/QQfile_recv` → 授权 → 扫到 `群里发的小说.epub` → 导入成功。
+
+**注意**：新版 QQ/微信把文件放进了 `Android/data/<包名>/...`，那个位置安卓 11+ 任何第三方 App 都读不到，
+SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用打开 → 保存到本机」。
+
 ## 下一步
 
-1. 用户验收 0.6.10：重点看三件事 —— 导入（选文件夹批量扫）、漫画能翻页（横滑/点右半边）、EPUB 轻扫码翻页。
-2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.10-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
+1. 用户验收 0.6.11：重点看三件事 —— 导入（选文件夹批量扫 + 常用位置直达）、漫画能翻页（横滑/点右半边）、EPUB 轻扫码翻页。
+2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.11-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
 3. MOBI/AZW3 真实样书暂不追（用户明确说不做），自造 MOBI6 样书已确认解析链路与目录。
 4. 阶段 8 剩下：PDF 目录（需要换 PDF 解析库）、按标签/系列分组、阅读页页码（foliate 只给百分比）。
+
 
 
 

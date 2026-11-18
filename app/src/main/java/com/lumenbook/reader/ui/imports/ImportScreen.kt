@@ -1,9 +1,12 @@
 package com.lumenbook.reader.ui.imports
 
+import android.net.Uri
+import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -134,6 +138,7 @@ fun ImportScreen(container: AppContainer, onClose: () -> Unit) {
                 EmptyImportHint(
                     folderLabel = folderName,
                     onPickFolder = { folderPicker.launch(null) },
+                    onPick = { path -> folderPicker.launch(initialTreeUri(path)) },
                     onPickFiles = { filePicker.launch(ImportScanner.SUPPORTED.flatMap { mimeOf(it) }.toTypedArray()) },
                 )
             } else if (scanning) {
@@ -255,6 +260,7 @@ fun ImportScreen(container: AppContainer, onClose: () -> Unit) {
 private fun EmptyImportHint(
     folderLabel: String?,
     onPickFolder: () -> Unit,
+    onPick: (String) -> Unit,
     onPickFiles: () -> Unit,
 ) {
     val colors = LocalLumenColors.current
@@ -306,12 +312,57 @@ private fun EmptyImportHint(
         ) {
             Text("只选几个文件", fontSize = 14.sp)
         }
-        Spacer(Modifier.height(26.dp))
+        Spacer(Modifier.height(22.dp))
+        Text(
+            "常用位置（一点就跳到那儿）",
+            fontSize = 12.sp,
+            color = colors.textTertiary,
+        )
+        Spacer(Modifier.height(10.dp))
+        QuickRow(
+            listOf(
+                "我的图书" to "我的图书",
+                "下载" to "Download",
+            ),
+            onPick,
+        )
+        Spacer(Modifier.height(8.dp))
+        QuickRow(
+            listOf(
+                "QQ 接收的文件" to "tencent/QQfile_recv",
+                "微信下载" to "tencent/MicroMsg/Download",
+            ),
+            onPick,
+        )
+        Spacer(Modifier.height(24.dp))
         Text(
             "支持 EPUB · PDF · TXT · MOBI · AZW3 · FB2 · CBZ",
             fontSize = 11.sp,
             color = colors.textTertiary,
         )
+    }
+}
+
+/** 一行两个快捷目录按钮；目录不存在时系统选择器会退回到上一级，不会报错。 */
+@Composable
+private fun QuickRow(items: List<Pair<String, String>>, onPick: (String) -> Unit) {
+    val colors = LocalLumenColors.current
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items.forEach { (label, path) ->
+            TextButton(
+                onClick = { onPick(path) },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(40.dp)
+                    .border(1.dp, colors.separator, RoundedCornerShape(20.dp)),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Text(label, fontSize = 13.sp, color = colors.textSecondary, maxLines = 1)
+            }
+        }
     }
 }
 
@@ -340,3 +391,13 @@ private fun shortPath(path: String): String {
         else -> "…/" + parts.takeLast(2).joinToString("/")
     }
 }
+
+/**
+ * 让系统文件夹选择器直接停在某个固定目录（QQ 接收文件、微信下载、Download 之类的位置是固定的，
+ * 让用户自己去一层层翻，翻不到就以为「导入不了」——真实用户反馈过这个问题）。
+ * 目录不存在时 DocumentsUI 会退回上一级，不会崩。
+ */
+private fun initialTreeUri(path: String): Uri = DocumentsContract.buildDocumentUri(
+    "com.android.externalstorage.documents",
+    "primary:" + path.trim('/'),
+)
