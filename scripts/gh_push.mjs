@@ -20,7 +20,11 @@ const API = "https://api.github.com";
 const dryRun = process.argv.includes("--dry-run");
 
 function git(args, opts = {}) {
-  return execFileSync("git", args, { cwd: ROOT, maxBuffer: 64 * 1024 * 1024, ...opts });
+  return execFileSync("git", ["-c", "core.quotepath=false", ...args], {
+    cwd: ROOT,
+    maxBuffer: 64 * 1024 * 1024,
+    ...opts,
+  });
 }
 const gitText = (...args) => git(args, { encoding: "utf8" }).trim();
 const gitBuf = (...args) => git(args);

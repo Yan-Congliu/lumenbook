@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import com.lumenbook.reader.data.AppContainer
 import com.lumenbook.reader.data.Appearance
 import com.lumenbook.reader.data.BackgroundStore
+import com.lumenbook.reader.ui.imports.ImportScreen
 import com.lumenbook.reader.ui.library.LibraryScreen
 import com.lumenbook.reader.ui.reader.ReaderScreen
 import com.lumenbook.reader.ui.settings.SettingsScreen
@@ -88,36 +89,24 @@ fun LumenAppRoot(
         return
     }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNullOrEmpty()) return@rememberLauncherForActivityResult
-        scope.launch {
-            val outcome = container.library.import(uris)
-            val message = buildString {
-                if (outcome.added > 0) append("导入 ${outcome.added} 本")
-                if (outcome.failed.isNotEmpty()) {
-                    if (isNotEmpty()) append("，")
-                    append("${outcome.failed.size} 本失败")
-                }
-            }.ifBlank { "没有导入任何书" }
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-        }
+    // ---- 导入：走自己的「选文件夹 → 自动扫描」页 ----
+    // 系统文件选择器默认停在「最近」，书放在下载目录或几层子文件夹里时用户翻不到（真机反馈过），
+    // 所以导入入口改成让用户挑一个文件夹，目录遍历由 App 自己做。
+    var importing by rememberSaveable { mutableStateOf(false) }
+
+    if (importing) {
+        ImportScreen(
+            container = container,
+            onClose = {
+                importing = false
+                scope.launch { container.library.refresh() }
+            },
+        )
+        return
     }
 
-    val importBooks = remember(context) {
-        {
-            picker.launch(
-                arrayOf(
-                    "application/epub+zip",
-                    "application/pdf",
-                    "text/plain",
-                    "application/x-mobipocket-ebook",
-                    "application/vnd.amazon.ebook",
-                    "application/x-fictionbook+xml",
-                    "application/vnd.comicbook+zip",
-                    "application/octet-stream",
-                ),
-            )
-        }
+    val importBooks = remember {
+        { importing = true }
     }
 
     // ---- 自定义背景图 ----

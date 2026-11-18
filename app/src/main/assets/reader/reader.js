@@ -10,6 +10,69 @@ const splash = document.getElementById('splash')
 /** 诊断卡只在调试时显示：在地址后面加 ?diag=1（平时不打扰阅读）。 */
 const DIAG = new URLSearchParams(location.search).has('diag')
 
+/** 手势调试浮层：只有调试包会带 ?hud=1（正式包永远不带，所以这段在正式包里是死代码）。
+ *  翻页判定在 vendor/foliate/paginator.js 的 snap() 里：位移 ≥ 页宽 10% 或速度 ≥ 0.20 px/ms。 */
+const HUD = new URLSearchParams(location.search).has('hud')
+const HUD_DRAG_MIN = 0.10
+const HUD_SPEED_MIN = 0.20
+
+if (HUD) {
+  let hudEl = null
+  let hudCount = 0
+  let hudHideTimer = 0
+  const ensureHud = () => {
+    if (hudEl) return hudEl
+    hudEl = document.createElement('div')
+    hudEl.id = 'lumen-gesture-hud'
+    Object.assign(hudEl.style, {
+      position: 'fixed', left: '8px', bottom: '82px', zIndex: '2147483000',
+      padding: '6px 8px',
+      font: '11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace',
+      color: '#111', background: 'rgba(255,255,255,.94)',
+      border: '1px solid rgba(0,0,0,.18)', borderRadius: '5px',
+      pointerEvents: 'none', whiteSpace: 'pre', maxWidth: '94vw',
+      transition: 'opacity .25s', opacity: '0',
+    })
+    document.body.append(hudEl)
+    return hudEl
+  }
+  const show = () => {
+    const el = ensureHud()
+    el.style.opacity = '1'
+    clearTimeout(hudHideTimer)
+    hudHideTimer = setTimeout(() => { if (hudEl) hudEl.style.opacity = '0' }, 7000)
+  }
+  const mark = (ok) => (ok ? '✓' : '✗')
+  // 拖动途中：实时百分比，能看出「还差多少」
+  globalThis.__lumenGestureLive = (dragPx, size) => {
+    if (!size) return
+    const ratio = Math.abs(dragPx) / size
+    const changed = Math.round(ratio * 100)
+    if (changed === hudCount) return
+    hudCount = changed
+    const el = ensureHud()
+    el.textContent = '拖动 ' + Math.abs(Math.round(dragPx)) + 'px / ' + Math.round(size) + 'px = '
+      + (ratio * 100).toFixed(1) + '%  (' + HUD_DRAG_MIN * 100 + '%)'
+    show()
+  }
+  // 松手判定：这一下到底翻没翻、为什么
+  globalThis.__lumenGestureResult = (d, size, pages) => {
+    const ratio = size ? Math.abs(d.drag) / size : 0
+    const speed = Math.abs(d.v)
+    const el = ensureHud()
+    el.textContent =
+      '拖动 ' + Math.abs(d.drag).toFixed(0) + 'px / ' + Math.round(size) + 'px = '
+        + (ratio * 100).toFixed(1) + '%  ' + mark(d.byDrag) + ' ≥' + HUD_DRAG_MIN * 100 + '%\n'
+      + '速度 ' + speed.toFixed(2) + ' px/ms        ' + mark(speed >= HUD_SPEED_MIN)
+        + ' ≥' + HUD_SPEED_MIN.toFixed(2) + '\n'
+      + (d.move
+        ? '→ 翻页 ' + (d.forward ? '后翻' : '前翻') + ' 到第 ' + (d.target + 1) + ' / ' + pages + ' 页'
+        : '→ 不翻页（回弹）')
+    show()
+  }
+}
+
+
 let style = {
   paper: '#F7F4EF',
   ink: '#1A1917',

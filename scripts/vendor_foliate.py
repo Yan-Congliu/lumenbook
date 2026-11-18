@@ -267,6 +267,8 @@ NEW_SNAP = r"""    snap(vx, vy) {
         const target = Math.max(0, Math.min(pages - 1,
             move ? base + (forward ? 1 : -1) : base))
         this._lumenDebug = { settled, base, drag: +drag.toFixed(1), v: +v.toFixed(3), byDrag, move, forward, target }
+        // LUMENBOOK DEBUG: 手势判定结果送到调试浮层（正式包里没人挂这个函数，一行 JS 就跳过了）
+        try { globalThis.__lumenGestureResult?.(this._lumenDebug, size, pages) } catch (e) {}
 
         this.#scrollToPage(target, 'snap').then(() => {
             const dir = target <= 0 ? -1 : target >= pages - 1 ? 1 : null
@@ -301,7 +303,9 @@ TOUCH_MOVE_OLD = """        state.vx = dx / dt
 TOUCH_MOVE_NEW = """        state.vx = dx / dt
         state.vy = dy / dt
         // LUMENBOOK PATCH: 累计横向拖动（正数 = 向左划 = 往后翻）
-        this._lumenDrag = (this._lumenDrag || 0) + (Math.abs(dx) >= Math.abs(dy) ? dx : 0)"""
+        this._lumenDrag = (this._lumenDrag || 0) + (Math.abs(dx) >= Math.abs(dy) ? dx : 0)
+        // LUMENBOOK DEBUG: 拖动过程中实时报位移，调试浮层要看到「差多少到阈值」
+        try { globalThis.__lumenGestureLive?.(this._lumenDrag || 0, this.size || 0) } catch (e) {}"""
 
 
 def patch_paginator_snap() -> None:

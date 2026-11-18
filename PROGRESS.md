@@ -336,10 +336,28 @@ CBZ / FB2 验证            scripts/make_test_misc.py 自造样书，桌面全�
   否则改完 `paginator.js` 刷新页面还在跑浏览器缓存里的旧模块。
 - 桌面实测（360×800 模拟、页宽 324）：前翻 11% → 翻页；后翻 11% → 回退；3% 慢拖 → 不翻。
 
+## 阶段 8：导入改成「选文件夹 → 自动扫描」（0.6.9）
+
+真实用户反馈（2026-11-18）：给他发了 APK，他说「导入不了」，问是不是找不到文件，答「对」；
+把书放到手机存储根目录新建的「我的图书」文件夹后就能找到了，并说「他放在太里头就找不见」。
+
+- 根因：导入走的是系统 SAF 选择器（`OpenMultipleDocuments`），它默认停在「最近」，
+  书放在下载目录或几层子文件夹里时翻不到；另外按 8 种 MIME 过滤，未知类型的书还会变灰不可选。
+- 改成自家导入页：
+  - `app/src/main/java/com/lumenbook/reader/importer/ImportScanner.kt`：拿 `ACTION_OPEN_DOCUMENT_TREE` 授权，
+    自己用 `DocumentsContract` 递归遍历（深度上限 12、最多 3000 个文件、跳过 `.` 开头），
+    按扩展名收 EPUB/PDF/TXT/MOBI/AZW3/FB2/CBZ，并记相对路径与大小。
+  - `app/src/main/java/com/lumenbook/reader/ui/imports/ImportScreen.kt`：选文件夹 → 扫描进度 → 带勾选的清单
+    （全选/全不选、来源路径、大小）→ 「导入 N 本」；另有「只选几个文件」备用入口（走系统选择器，放宽到 `*/*`）。
+  - `ui/AppRoot.kt`：书库的导入入口改为打开全屏 `ImportScreen`，导入完成后刷新书库。
+- 教训：**依赖系统文件选择器的导入流程在国产 ROM 上不可靠**，用户不会去理解「最近/浏览」的区别，
+  导入要自己扫目录。
+
 ## 下一步
 
-1. 用户验收 0.6.8：EPUB 轻轻一划（约页宽 1/10）就该翻页，慢慢拖回原位则不翻。
-2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.8-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
+1. 用户验收 0.6.9：书库右上 ⋯ →「导入书籍」，选一个文件夹（比如「我的图书」或下载目录），
+   应该能把子文件夹里的书一起列出来勾选导入。
+2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.9-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
 3. MOBI/AZW3 真实样书暂不追（用户明确说不做），自造 MOBI6 样书已确认解析链路与目录。
 4. 阶段 8 剩下：PDF 目录（需要换 PDF 解析库）、按标签/系列分组、阅读页页码（foliate 只给百分比）。
 

@@ -293,7 +293,11 @@ private fun buildReaderWebView(
         override fun onPageFinished(view: WebView, url: String) = onPageFinished(view)
     }
     addJavascriptInterface(bridge, "Android")
-    loadUrl("https://$ASSET_DOMAIN/assets/reader/index.html")
+    // 调试包给地址加 ?hud=1：阅读内核会画一个手势判定浮层（位移/速度/翻不翻）。
+    // 正式包里 BuildConfig.DEBUG 是 false，URL 不带参数，浮层那段 JS 根本不会执行。
+    val readerUrl = "https://$ASSET_DOMAIN/assets/reader/index.html" +
+        if (BuildConfig.DEBUG) "?hud=1" else ""
+    loadUrl(readerUrl)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
