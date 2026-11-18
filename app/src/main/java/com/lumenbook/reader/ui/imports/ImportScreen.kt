@@ -279,6 +279,15 @@ private fun EmptyImportHint(
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             lineHeight = 20.sp,
         )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "小提示：安卓不允许直接选「下载」根目录，选它里面的子文件夹就行；" +
+                "也可以新建一个「我的图书」，以后把书都放里面。",
+            fontSize = 12.sp,
+            color = colors.textTertiary,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            lineHeight = 18.sp,
+        )
         Spacer(Modifier.height(28.dp))
         Button(
             onClick = onPickFolder,

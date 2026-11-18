@@ -101,7 +101,15 @@ export class FixedLayout extends HTMLElement {
                     onZoom,
                 })
             }, { once: true })
-            iframe.src = src
+            // LUMENBOOK PATCH: srcdoc —— 安卓 WebView 里 blob: URL 导航不会触发 load，
+            // 与 paginator.js 同一个毛病（漫画 CBZ 会卡在「排版」）。
+            if (typeof src === 'string' && src.startsWith('blob:')) {
+                fetch(src).then(r => r.text()).then(text => {
+                    iframe.srcdoc = text
+                }).catch(() => { iframe.src = src })
+            } else {
+                iframe.src = src
+            }
         })
     }
     #render(side = this.#side) {

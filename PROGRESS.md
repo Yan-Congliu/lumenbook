@@ -353,12 +353,38 @@ CBZ / FB2 验证            scripts/make_test_misc.py 自造样书，桌面全�
 - 教训：**依赖系统文件选择器的导入流程在国产 ROM 上不可靠**，用户不会去理解「最近/浏览」的区别，
   导入要自己扫目录。
 
+## 阶段 8：模拟器实测 + 漫画/点击手势修好（0.6.10）
+
+用户（2026-11-18 19:17）：「虚拟机运行一下看看」。本机有 `.tooling/android-sdk/emulator`（Android 16 / API 36 / x86_64 /
+`emulator-5554`，1080x2400、density 420），用 `adb shell input tap|swipe` + `screencap` 驱动，装 debug 包实测。
+
+实测通过的：
+
+- 导入页 → 选文件夹 → 深目录扫描：`我的图书/小说/短篇/雪夜读书记.txt`、`Download/deep/a/b/说明文档.pdf` 都扫到了，
+  还能正确显示来源相对路径；FB2 的作者也解析出来了。导入后书库立刻可见。
+- TXT 转派生 EPUB、EPUB 翻页/位置记忆、PDF 渲染 + 滑动翻页 + 页码记忆（重装 APK 后仍回到第 3/4 页）。
+- **漫画 CBZ 打不开（新 bug）**：界面永远停在「正在排版」，20 秒后报「排版 超时」。
+  根因与 0.3.3 那次的 EPUB 一模一样 —— `vendor/foliate/fixed-layout.js` 的 `#createFrame()` 也是
+  `iframe.src = 一个 blob: URL` 然后等 load 事件，安卓 WebView 里这个 load 不来。
+  修法：新增 `patch_fixed_layout()`（`scripts/vendor_foliate.py`），blob 先 `fetch().text()` 再塞 `iframe.srcdoc`；
+  logcat 里能看到 `about:srcdoc` 就说明补丁生效了。
+- **漫画/PDF 的点击分区在 WebView 里没反应**：正文在 iframe 里，`pointerdown/pointerup` 挂在 window 上收不到
+  （iframe 事件不冒泡，同一文档源也不行）。修法：`app/src/main/assets/reader/reader.js` 新增
+  `attachDocGestures(doc)`，在每个内容文档的 `defaultView` 上挂 `touchstart/touchend`（桌面无触摸才退 pointer 事件），
+  在 `view.addEventListener('load', e => attachDocGestures(e.detail.doc))` 与 `open()` 完成后各补一次。
+  - 轻点：左 28% 上一页 / 右 72% 下一页 / 中间呼出工具栏。
+  - 横滑：只有固定版式（`renderer.tagName` 含 `FXL`/`FIXED`，即漫画 CBZ）才由我们翻，位移 ≥12% 页宽就翻；
+    可重排的书（EPUB/FB2/TXT）的拖动仍然交给 paginator，避免抢手势。
+  - **坑**：WebView 的 iframe 里 `pointerup` 收不到（触摸一滑就 pointercancel），必须用 touch 事件。
+- 导入页补了一句提示：安卓不允许直接选「下载」根目录（真机上会报「无法使用此文件夹」），要么选子文件夹，
+  要么新建「我的图书」。这条是模拟器实测发现的，不是猜的。
+
 ## 下一步
 
-1. 用户验收 0.6.9：书库右上 ⋯ →「导入书籍」，选一个文件夹（比如「我的图书」或下载目录），
-   应该能把子文件夹里的书一起列出来勾选导入。
-2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.9-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
+1. 用户验收 0.6.10：重点看三件事 —— 导入（选文件夹批量扫）、漫画能翻页（横滑/点右半边）、EPUB 轻扫码翻页。
+2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.10-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
 3. MOBI/AZW3 真实样书暂不追（用户明确说不做），自造 MOBI6 样书已确认解析链路与目录。
 4. 阶段 8 剩下：PDF 目录（需要换 PDF 解析库）、按标签/系列分组、阅读页页码（foliate 只给百分比）。
+
 
 

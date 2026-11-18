@@ -86,6 +86,7 @@ def main() -> int:
     patch_paginator_load()
     patch_paginator_snap()
     patch_paginator_touchend()
+    patch_fixed_layout()
     (DEST.parent / "VERSION.txt").write_text(
         f"foliate-js {version}\nlicense: {info.get('license')}\n"
         f"tarball: {tarball}\nfiles: {len(files)}\n",
@@ -390,6 +391,50 @@ def patch_paginator_touchend() -> None:
     text = text.replace(TOUCH_END_OLD, TOUCH_END_NEW)
     path.write_text(text.replace("\n", "\r\n") if crlf else text, encoding="utf-8")
     print("  ✓ 已打上松手同步判定补丁（#onTouchEnd 直接 snap）")
+
+
+FIXED_LOAD_OLD = """            }, { once: true })
+            iframe.src = src
+        })
+    }
+"""
+
+FIXED_LOAD_NEW = """            }, { once: true })
+            // LUMENBOOK PATCH: srcdoc —— 安卓 WebView 里 blob: URL 导航不会触发 load，
+            // 与 paginator.js 同一个毛病（漫画 CBZ 会卡在「排版」）。
+            if (typeof src === 'string' && src.startsWith('blob:')) {
+                fetch(src).then(r => r.text()).then(text => {
+                    iframe.srcdoc = text
+                }).catch(() => { iframe.src = src })
+            } else {
+                iframe.src = src
+            }
+        })
+    }
+"""
+
+
+def patch_fixed_layout() -> None:
+    """固定版式渲染器（漫画 CBZ / 固定版式 EPUB）也改用 srcdoc 加载 iframe。
+
+    与 patch_paginator_load 同因：`iframe.src = blob:` 在安卓 WebView 里 load 事件不来，
+    `view.init()` 永远不 resolve，界面上就是卡在「排版」，20 秒后报超时。
+    """
+    path = DEST / "fixed-layout.js"
+    if not path.is_file():
+        return
+    raw = path.read_text(encoding="utf-8")
+    crlf = "\r\n" in raw
+    text = raw.replace("\r\n", "\n")
+    if "LUMENBOOK PATCH: srcdoc" in text:
+        print("  · 固定版式 srcdoc 补丁已存在")
+        return
+    if FIXED_LOAD_OLD not in text:
+        print("  ! 固定版式补丁失败：fixed-layout.js 的 #createFrame 结构变了")
+        return
+    text = text.replace(FIXED_LOAD_OLD, FIXED_LOAD_NEW)
+    path.write_text(text.replace("\n", "\r\n") if crlf else text, encoding="utf-8")
+    print("  ✓ 已打上固定版式补丁（blob→srcdoc）")
 
 
 if __name__ == "__main__":

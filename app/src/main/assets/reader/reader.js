@@ -270,13 +270,15 @@ async function open(url, cfi, themeJson) {
       bridge('onExternalLink', e.detail?.href || '')
     })
     view.addEventListener('error', (e) => bridge('onError', String(e.detail?.message || e.detail || '未知错误')))
-    view.addEventListener('load', () => {
+    view.addEventListener('load', (e) => {
       // 换章节时新文档是新的，再补一次（幂等）
       try {
         view.renderer?.setStyles?.(contentCss())
-      } catch (e) {
-        console.error('setStyles on load', e)
+      } catch (e2) {
+        console.error('setStyles on load', e2)
       }
+      // 正文在 iframe 里，事件不会冒泡到 window，得挂到每个文档上
+      attachDocGestures(e.detail?.doc)
     })
 
     stage('解析书结构')
@@ -300,6 +302,12 @@ async function open(url, cfi, themeJson) {
     // 若这时 WebView 的尺寸和排版时不一致（安卓会先 0 后放大），再钉一次，
     // 渲染器的 ResizeObserver 会跟着重排。
     syncViewSize()
+    // 正文文档是 iframe，事件冒不到 window：给已经建好的文档补挂手势
+    try {
+      ;(view.renderer?.getContents?.() || []).forEach((c) => attachDocGestures(c.doc))
+    } catch (e) {
+      console.error('attachDocGestures', e)
+    }
     stage('完成')
 
     splash.classList.add('hidden')
@@ -419,6 +427,61 @@ window.addEventListener('pointerup', (e) => {
   else if (ratio > 0.72) next()
   else bridge('onToggleChrome')
 }, true)
+
+/** 固定版式（漫画 CBZ / 固定版式 EPUB）自己没有手势，横滑也得我们来翻。 */
+const isFixedLayout = () => {
+  const tag = view.renderer?.tagName || ''
+  return tag.includes('FXL') || tag.includes('FIXED')
+}
+
+/**
+ * 正文 iframe 里的事件不会冒泡到外层 window，所以轻点/横滑要挂到每个内容文档上。
+ * 幂等：同一个文档只挂一次。
+ */
+function attachDocGestures(doc) {
+  if (!doc || doc.__lumenGestures) return
+  const win = doc.defaultView
+  if (!win) return
+  doc.__lumenGestures = true
+  let down = null
+  const onDown = (x, y) => { down = { x, y, t: Date.now() } }
+  const onUp = (x, y) => {
+    if (!down) return
+    const dx = x - down.x
+    const dy = y - down.y
+    const dt = Date.now() - down.t
+    down = null
+    const w = window.innerWidth || 360
+    // 竖着划：交给文档自己滚
+    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) return
+    if (Math.abs(dx) > 12) {
+      if (isFixedLayout() && Math.abs(dx) >= w * 0.12) {
+        if (dx < 0) next()
+        else prev()
+      }
+      // 可重排的书：拖动已经由 paginator 处理，这里不插手
+      return
+    }
+    if (dt > 600) return
+    const ratio = x / w
+    if (ratio < 0.28) prev()
+    else if (ratio > 0.72) next()
+    else bridge('onToggleChrome')
+  }
+  // 触屏用 touch 事件（WebView 里 pointer 系列在 iframe 内可能收不到），桌面用 pointer
+  win.addEventListener('touchstart', (e) => {
+    const t = e.touches[0]
+    if (t) onDown(t.clientX, t.clientY)
+  }, { capture: true, passive: true })
+  win.addEventListener('touchend', (e) => {
+    const t = e.changedTouches[0]
+    if (t) onUp(t.clientX, t.clientY)
+  }, { capture: true, passive: true })
+  if (!('ontouchstart' in win)) {
+    win.addEventListener('pointerdown', (e) => onDown(e.clientX, e.clientY), true)
+    win.addEventListener('pointerup', (e) => onUp(e.clientX, e.clientY), true)
+  }
+}
 
 // Kotlin 侧调用入口
 window.lumen = {
