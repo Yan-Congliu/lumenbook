@@ -142,8 +142,25 @@ def build_site() -> None:
     build_epub(OUT / "book.epub")
 
 
+class _NoCacheHandler(http.server.SimpleHTTPRequestHandler):
+    """总是发 no-store。
+
+    SimpleHTTPRequestHandler 靠 Last-Modified 让浏览器做条件请求，但 ES module 的 URL
+    不变时 Chrome 会直接用内存里的旧模块 —— 改了 paginator.js 刷新页面还是跑旧代码，
+    调试时很容易误判「补丁没生效」。这里一律禁止缓存。
+    """
+
+    def end_headers(self) -> None:
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        super().end_headers()
+
+    def log_message(self, fmt: str, *args) -> None:
+        pass
+
+
 def serve(port: int) -> None:
-    handler = lambda *a, **kw: http.server.SimpleHTTPRequestHandler(*a, directory=str(OUT), **kw)
+    handler = lambda *a, **kw: _NoCacheHandler(*a, directory=str(OUT), **kw)
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("127.0.0.1", port), handler) as httpd:
         print(f"serving {OUT} at http://127.0.0.1:{port}/index.html?book=book.epub", flush=True)

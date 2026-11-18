@@ -275,10 +275,71 @@ CBZ / FB2 验证            scripts/make_test_misc.py 自造样书，桌面全�
   `Modifier.transformable(state = transformState, canPan = { scale > 1.01f })`：没放大时单指拖动放行给 Pager，
   放大后才由 transformable 接管平移；双指缩放始终可用。
 
+## 旁支：Apple Books 跨章掉字体（2026-11-18）
+
+用户拿 iPad 上的真问题来对：改字体后读完一章、翻到下一章字体回到默认，退出重进又好了。
+拆了两本书，结论都指向 **Apple Books 自己**，不是书：
+
+```
+中国2185（calibre 2.82 输出）   2 个正文文件（3.6万/5.4万字，按大小硬切，切点在清单中间还重复一段）
+                                font-family 0 处、@font-face 0 个、内嵌字体 0 个、内联样式 0 处
+红星照耀中国（多看转出）        79 个正文文件（一章一文件，4-6千字），TOC 75 条
+                                font-family 13 处但全在特殊块上：h2 黑体、126 个 p.kt 楷体引文
+                                正文 <p> 没有字体设置；@font-face 的 30 个 url() 全是 XXXXXXXXXXXXXXXX（占位符）
+```
+
+- 共同点：**正文都没有字体声明**，所以"改的字体被顶回去"不可能是 CSS 造成的；
+  两本唯一能对上的触发点就是 **跨 spine 文档**（中国2185 只有 1 个交界、红星 79 个）。
+- 旁证：Apple 社区 [thread/255614451](https://discussionschinese.apple.com/thread/255614451?page=1&sortBy=rank)，
+  主题/字体还原为默认、关书重开恢复，和现象完全一致。
+- 新增 `scripts/epub_font_audit.py`：扫 font-family / @font-face / 内嵌字体 / 内联 style、列 spine 各文档字数与标题、
+  导出 NCX 目录，`-o` 出 Markdown 报告。以后审任何一本 EPUB 都用它。
+- `scripts/epub_merge_probe.py`：把 calibre 硬切出来的多个 XHTML 并成单文档（顺带去掉切点重复段），
+  用来做"文档交界是不是触发器"的对照实验。
+- **用户实测确认**：`中国2185-单文档测试.epub`（单个正文文档、零交界）读完字体**不掉**；
+  红星照耀中国（79 个文档）每章一交界就掉。→ **触发点就是 spine 文档切换**，与书的 CSS 无关。
+- 结论落地：想让某本书固定用某个字体，唯一稳的办法是**把字体写进书自己的 CSS**（跟着每个文档走），
+  App 里手选的字体是外挂注入，换文档必丢。
+- 新增 `scripts/epub_font_inject.py`：`--family "Songti SC"` 只写名字（0 体积，要求设备上有该字体）；
+  `--font-file x.ttf` 把字体打进包并在 OPF manifest 登记（10-20MB）。同时注入
+  `META-INF/com.apple.ibooks.display-options.xml`（specified-fonts=true），并在不嵌文件时放一条 `local()` 的
+  `@font-face` —— 有 @font-face，Apple Books 的字体菜单才会出现「Original / 原书字体」。
+  用的时候 Aa 面板必须停在 Original，手选系统字体仍会跨章丢。
+- 新增 `scripts/epub_check_package.py`：校验 mimetype 首位/STORED、display-options、注入后的 CSS 尾部、各 HTML 良构。
+- 顺带发现：红星那本本身有 2 个文档不良构（`text00005.html` 文件尾有杂内容、`text00074.html` 标签不闭合），
+  iOS 宽容解析无碍，但属于隐患。
+- 新增 `scripts/epub_font_stats.py`：一本书一行（正文文档数 / 字体声明数 / @font-face / 内嵌字体 / 内联字体 / 是否已注入 / 固定版式），批量体检用。
+- 新增 `scripts/epub_font_batch.py`：整目录批量注入 + 输出 `报告.md`（成功/跳过/失败、体积变化），自动跳过固定版式与已注入的书。
+  实测 `D:\vivo办公\接收到的文件` 8 本全过（含 3223 文档 / 43MB 的二十四史），输出 `out-宋体版/`。
+  8 本复查：书内 `!important` 抢字体 0 处、内联 `style="font-family"` 0 处、内嵌字体 0 个 —— 所以元素级 `!important`
+  注入在这个书源上足够。写文档 `EPUB字体修改参考.md`（宋体批量全流程 + iOS 字体名表 + 坑清单）。
+- **对 LumenBook 的意义**：用户字体在所有 spine 文档上都必须重新注入 —— foliate 里换文档要确认
+  `renderer.setStyles` / 用户样式注入跟着新 document 走，别学 iBooks 只对当前文档生效。
+
+## 阶段 8：EPUB 轻扫翻页（0.6.8）
+
+用户反馈：翻页要划好几次、或者第一次就得划很大幅度，页面跟着手指走、一松手又弹回。
+
+- 根因在 foliate 的 `paginator.js`：`snap()` 用 `(start + end) / 2 + velocity * size` 定页，
+  `velocity` 是 px/ms，乘一页宽之后等于要求「拖满一整页」或「手速 0.8 px/ms 以上」才肯翻，
+  轻扫必然弹回。
+- 改为「位移优先」判定：`drag = (start + end) / 2 - settled - size / 2`，
+  `byDrag = |drag| / size >= 0.10`，`move = byDrag || |v| >= 0.20`，方向由 `byDrag ? drag : v` 决定。
+  `settled = Math.abs(#scrollBounds[0])` 就是起手那页的滚动位置，不需要额外记状态。
+- **两个必须记住的坑**：
+  1. `_lumenDebug` 探针一度写在 `const target` 之前 → `ReferenceError: Cannot access 'target' before initialization`，
+     而它是在 `#onTouchEnd` 的 `requestAnimationFrame` 里抛的，被静默吞掉，表现为「页面卡在半路、不回弹也不翻页」。
+  2. foliate 原本把 `snap()` 放在 `requestAnimationFrame` 里，WebView / 后台标签页 rAF 被节流就不翻页。
+     现在 `#onTouchEnd` 同步调用 `snap()`（`patch_paginator_touchend()`）。
+- 补丁全部落在 `scripts/vendor_foliate.py`（`patch_paginator_snap()` / `patch_paginator_touchend()`），
+  重新 vendor 后自动重放；桌面验证脚本 `scripts/reader_smoke.py --serve` 现在发 `Cache-Control: no-store`，
+  否则改完 `paginator.js` 刷新页面还在跑浏览器缓存里的旧模块。
+- 桌面实测（360×800 模拟、页宽 324）：前翻 11% → 翻页；后翻 11% → 回退；3% 慢拖 → 不翻。
+
 ## 下一步
 
-1. 用户验收 0.6.7：PDF 是不是能左右滑着翻页（没放大时）、放大后能拖、双击无效属预期。
-2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.7-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
+1. 用户验收 0.6.8：EPUB 轻轻一划（约页宽 1/10）就该翻页，慢慢拖回原位则不翻。
+2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.8-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
 3. MOBI/AZW3 真实样书暂不追（用户明确说不做），自造 MOBI6 样书已确认解析链路与目录。
 4. 阶段 8 剩下：PDF 目录（需要换 PDF 解析库）、按标签/系列分组、阅读页页码（foliate 只给百分比）。
 

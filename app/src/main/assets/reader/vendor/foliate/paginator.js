@@ -884,18 +884,30 @@ export class Paginator extends HTMLElement {
     }
 
     snap(vx, vy) {
+        // LUMENBOOK PATCH: 轻扫判定改成「拖动超过页宽 10% 或速度 ≥ 0.20 px/ms」。
+        // 原式是 (start + end) / 2 + velocity * size，等于要求拖满一整页才肯翻，
+        // 真机上就是「页面跟着手指走、一松手又弹回原页」。
         const velocity = this.#vertical ? vy : vx
-        const [offset, a, b] = this.#scrollBounds
-        const { start, end, pages, size } = this
-        const min = Math.abs(offset) - a
-        const max = Math.abs(offset) + b
-        const d = velocity * (this.#rtl ? -size : size)
-        const page = Math.floor(
-            Math.max(min, Math.min(max, (start + end) / 2
-                + (isNaN(d) ? 0 : d))) / size)
+        const { pages, size } = this
+        if (this.scrolled || !size) {
+            const page0 = Math.floor((this.start + this.end) / (2 * size))
+            return this.#scrollToPage(page0, 'snap')
+        }
+        // 起手那页的滚动位置就存在 #scrollBounds[0] 里；当前滚动位置减去它
+        // 就是这次手势把页面拖出去了多少像素。
+        const settled = Math.abs(this.#scrollBounds[0])
+        const base = Math.round(settled / size)
+        const drag = (this.start + this.end) / 2 - settled - size / 2
+        const v = isNaN(velocity) ? 0 : velocity
+        const byDrag = Math.abs(drag) / size >= 0.10
+        const move = byDrag || Math.abs(v) >= 0.20
+        const forward = ((this.#rtl ? -1 : 1) * (byDrag ? drag : v)) > 0
+        const target = Math.max(0, Math.min(pages - 1,
+            move ? base + (forward ? 1 : -1) : base))
+        this._lumenDebug = { settled, base, drag: +drag.toFixed(1), v: +v.toFixed(3), byDrag, move, forward, target }
 
-        this.#scrollToPage(page, 'snap').then(() => {
-            const dir = page <= 0 ? -1 : page >= pages - 1 ? 1 : null
+        this.#scrollToPage(target, 'snap').then(() => {
+            const dir = target <= 0 ? -1 : target >= pages - 1 ? 1 : null
             if (dir) return this.#goTo({
                 index: this.#adjacentIndex(dir),
                 anchor: dir < 0 ? () => 1 : () => 0,
@@ -909,6 +921,9 @@ export class Paginator extends HTMLElement {
             t: e.timeStamp,
             vx: 0, xy: 0,
         }
+        // LUMENBOOK PATCH: 记下起手那页，松手时按位移决定翻不翻页
+        this._lumenStartPage = this.page
+        this._lumenDrag = 0
     }
     #onTouchMove(e) {
         const state = this.#touchState
@@ -934,6 +949,8 @@ export class Paginator extends HTMLElement {
         state.t = e.timeStamp
         state.vx = dx / dt
         state.vy = dy / dt
+        // LUMENBOOK PATCH: 累计横向拖动（正数 = 向左划 = 往后翻）
+        this._lumenDrag = (this._lumenDrag || 0) + (Math.abs(dx) >= Math.abs(dy) ? dx : 0)
         this.#touchScrolled = true
         if (Math.abs(dx) >= Math.abs(dy)) {
             this.scrollBy(dx, 0)
@@ -944,14 +961,10 @@ export class Paginator extends HTMLElement {
     #onTouchEnd() {
         this.#touchScrolled = false
         if (this.scrolled) return
-
-        // XXX: Firefox seems to report scale as 1... sometimes...?
-        // at this point I'm basically throwing `requestAnimationFrame` at
-        // anything that doesn't work
-        requestAnimationFrame(() => {
-            if (globalThis.visualViewport.scale === 1)
-                this.snap(this.#touchState.vx, this.#touchState.vy)
-        })
+        // LUMENBOOK PATCH: 同步决定停在哪一页，不再塞进 requestAnimationFrame。
+        // 原实现在 rAF 里才调 snap()，某些 WebView / 后台标签页下 rAF 会被节流甚至不跑，
+        // 于是页面停在手指松开的位置：既不回弹，也不翻页。
+        this.snap(this.#touchState.vx, this.#touchState.vy)
     }
     // allows one to process rects as if they were LTR and horizontal
     #getRectMapper() {

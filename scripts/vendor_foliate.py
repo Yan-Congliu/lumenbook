@@ -84,6 +84,8 @@ def main() -> int:
     files = sorted(p.relative_to(DEST).as_posix() for p in DEST.rglob("*") if p.is_file())
     patch_paginator()
     patch_paginator_load()
+    patch_paginator_snap()
+    patch_paginator_touchend()
     (DEST.parent / "VERSION.txt").write_text(
         f"foliate-js {version}\nlicense: {info.get('license')}\n"
         f"tarball: {tarball}\nfiles: {len(files)}\n",
@@ -241,6 +243,149 @@ def patch_paginator_load() -> None:
     text = text[:i] + NEW_LOAD + text[j + len(end_marker):]
     path.write_text(text, encoding="utf-8")
     print("  ✓ 已打上 iframe 加载补丁（blob→srcdoc + 调试事件）")
+
+
+NEW_SNAP = r"""    snap(vx, vy) {
+        // LUMENBOOK PATCH: 轻扫判定改成「拖动超过页宽 10% 或速度 ≥ 0.20 px/ms」。
+        // 原式是 (start + end) / 2 + velocity * size，等于要求拖满一整页才肯翻，
+        // 真机上就是「页面跟着手指走、一松手又弹回原页」。
+        const velocity = this.#vertical ? vy : vx
+        const { pages, size } = this
+        if (this.scrolled || !size) {
+            const page0 = Math.floor((this.start + this.end) / (2 * size))
+            return this.#scrollToPage(page0, 'snap')
+        }
+        // 起手那页的滚动位置就存在 #scrollBounds[0] 里；当前滚动位置减去它
+        // 就是这次手势把页面拖出去了多少像素。
+        const settled = Math.abs(this.#scrollBounds[0])
+        const base = Math.round(settled / size)
+        const drag = (this.start + this.end) / 2 - settled - size / 2
+        const v = isNaN(velocity) ? 0 : velocity
+        const byDrag = Math.abs(drag) / size >= 0.10
+        const move = byDrag || Math.abs(v) >= 0.20
+        const forward = ((this.#rtl ? -1 : 1) * (byDrag ? drag : v)) > 0
+        const target = Math.max(0, Math.min(pages - 1,
+            move ? base + (forward ? 1 : -1) : base))
+        this._lumenDebug = { settled, base, drag: +drag.toFixed(1), v: +v.toFixed(3), byDrag, move, forward, target }
+
+        this.#scrollToPage(target, 'snap').then(() => {
+            const dir = target <= 0 ? -1 : target >= pages - 1 ? 1 : null
+            if (dir) return this.#goTo({
+                index: this.#adjacentIndex(dir),
+                anchor: dir < 0 ? () => 1 : () => 0,
+            })
+        })
+    }
+"""
+
+TOUCH_START_OLD = """        this.#touchState = {
+            x: touch?.screenX, y: touch?.screenY,
+            t: e.timeStamp,
+            vx: 0, xy: 0,
+        }
+    }"""
+
+TOUCH_START_NEW = """        this.#touchState = {
+            x: touch?.screenX, y: touch?.screenY,
+            t: e.timeStamp,
+            vx: 0, xy: 0,
+        }
+        // LUMENBOOK PATCH: 记下起手那页，松手时按位移决定翻不翻页
+        this._lumenStartPage = this.page
+        this._lumenDrag = 0
+    }"""
+
+TOUCH_MOVE_OLD = """        state.vx = dx / dt
+        state.vy = dy / dt"""
+
+TOUCH_MOVE_NEW = """        state.vx = dx / dt
+        state.vy = dy / dt
+        // LUMENBOOK PATCH: 累计横向拖动（正数 = 向左划 = 往后翻）
+        this._lumenDrag = (this._lumenDrag || 0) + (Math.abs(dx) >= Math.abs(dy) ? dx : 0)"""
+
+
+def patch_paginator_snap() -> None:
+    """把「轻扫翻页」的判定改软：按「拖了多远 + 划得多快」决定，而不是拖满整页。
+
+    foliate 在 touchend 里调用 `snap(vx, vy)`，判定式是
+    `floor(((start + end) / 2 + velocity * size) / size)`：手指已经把页面拖出去半屏，
+    只要没跨过整页边界就弹回去 —— 真机上表现为「轻轻一划翻不了页，要划好几次或者很用力」。
+    这里换成「拖动 ≥ 10% 页宽 或 速度 ≥ 0.20 px/ms 就翻相邻页」。
+    拖动量直接从滚动位置反推（#scrollBounds[0] 是起手那页的位置），不依赖 touch 状态的字段。
+    """
+    path = DEST / "paginator.js"
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8")
+
+    start_marker = "    snap(vx, vy) {"
+    end_marker = "\n    #onTouchStart(e) {"
+    i = text.find(start_marker)
+    j = text.find(end_marker, i) if i >= 0 else -1
+    if i < 0 or j < 0:
+        print("  ! 轻扫补丁失败：paginator.js 的 snap() 结构变了，需要人工检查")
+        return
+    already = "LUMENBOOK PATCH: 轻扫判定改成" in text[i:j]
+    text = text[:i] + NEW_SNAP + text[j + 1:]
+
+    if TOUCH_START_OLD in text:
+        text = text.replace(TOUCH_START_OLD, TOUCH_START_NEW)
+    elif "this._lumenStartPage" not in text:
+        print("  ! 轻扫补丁：touchstart 结构变了，起手页记录没打上")
+
+    if TOUCH_MOVE_OLD in text:
+        text = text.replace(TOUCH_MOVE_OLD, TOUCH_MOVE_NEW)
+    elif "this._lumenDrag" not in text:
+        print("  ! 轻扫补丁：touchmove 结构变了，累计位移没打上")
+
+    path.write_text(text, encoding="utf-8")
+    print("  · 轻扫翻页补丁已更新" if already else "  ✓ 已打上轻扫翻页补丁（位移 10% / 速度 0.20 px/ms）")
+
+
+TOUCH_END_OLD = """    #onTouchEnd() {
+        this.#touchScrolled = false
+        if (this.scrolled) return
+
+        // XXX: Firefox seems to report scale as 1... sometimes...?
+        // at this point I'm basically throwing `requestAnimationFrame` at
+        // anything that doesn't work
+        requestAnimationFrame(() => {
+            if (globalThis.visualViewport.scale === 1)
+                this.snap(this.#touchState.vx, this.#touchState.vy)
+        })
+    }"""
+
+TOUCH_END_NEW = """    #onTouchEnd() {
+        this.#touchScrolled = false
+        if (this.scrolled) return
+        // LUMENBOOK PATCH: 同步决定停在哪一页，不再塞进 requestAnimationFrame。
+        // 原实现在 rAF 里才调 snap()，某些 WebView / 后台标签页下 rAF 会被节流甚至不跑，
+        // 于是页面停在手指松开的位置：既不回弹，也不翻页。
+        this.snap(this.#touchState.vx, this.#touchState.vy)
+    }"""
+
+
+def patch_paginator_touchend() -> None:
+    """松手后同步决定停在哪一页（foliate 原本塞在 requestAnimationFrame 里）。
+
+    rAF 在部分 WebView / 后台标签页会被节流到 1fps 甚至完全不跑；一旦不跑，
+    `snap()` 永远不执行，页面就停在手指松开的位置 —— 既不回弹也不翻页。
+    """
+    path = DEST / "paginator.js"
+    if not path.is_file():
+        return
+    raw = path.read_text(encoding="utf-8")
+    crlf = "\r\n" in raw
+    text = raw.replace("\r\n", "\n")
+    if "LUMENBOOK PATCH: 同步决定停在哪一页" in text:
+        print("  · 松手同步判定补丁已存在")
+        return
+    if TOUCH_END_OLD not in text:
+        print("  ! 松手同步判定补丁失败：paginator.js 的 #onTouchEnd 结构变了")
+        return
+    text = text.replace(TOUCH_END_OLD, TOUCH_END_NEW)
+    path.write_text(text.replace("\n", "\r\n") if crlf else text, encoding="utf-8")
+    print("  ✓ 已打上松手同步判定补丁（#onTouchEnd 直接 snap）")
 
 
 if __name__ == "__main__":
