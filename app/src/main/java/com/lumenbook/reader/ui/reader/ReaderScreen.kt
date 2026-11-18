@@ -26,6 +26,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.Canvas
@@ -98,6 +99,7 @@ import com.lumenbook.reader.data.Bookmark
 import com.lumenbook.reader.data.ReaderStyle
 import com.lumenbook.reader.ui.pdf.PdfReaderScreen
 import com.lumenbook.reader.ui.theme.LumenColors
+import com.lumenbook.reader.ui.theme.lumenColorsFor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -1071,7 +1073,7 @@ private fun ReaderStyleSheet(
                             modifier = Modifier
                                 .size(38.dp)
                                 .clip(RoundedCornerShape(50))
-                                .background(Color(item.swatch))
+                                .background(lumenColorsFor(item, isSystemInDarkTheme()).page)
                                 .border(
                                     width = if (theme == item) 2.dp else 1.dp,
                                     color = if (theme == item) colors.accent else colors.separator,

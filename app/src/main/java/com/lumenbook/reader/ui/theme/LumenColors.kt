@@ -93,6 +93,32 @@ val BlueLumenColors = LumenColors(
     separator = Color(0xFFD2DDE7),
 )
 
+/** 护眼绿·深色：系统进深色模式时，把亮绿纸换成墨绿纸，字提亮，免得夜里刺眼。*/
+val GreenDarkLumenColors = LumenColors(
+    isDark = true,
+    page = Color(0xFF1A211A),
+    surface = Color(0xFF222B21),
+    surfaceMuted = Color(0xFF2C362B),
+    text = Color(0xFFDDE6D8),
+    textSecondary = Color(0xFFA9B6A3),
+    textTertiary = Color(0xFF7B877A),
+    accent = Color(0xFF7FA86A),
+    separator = Color(0xFF30392E),
+)
+
+/** 灰蓝·深色：同上，夜里用深海蓝纸。*/
+val BlueDarkLumenColors = LumenColors(
+    isDark = true,
+    page = Color(0xFF171D23),
+    surface = Color(0xFF1F262D),
+    surfaceMuted = Color(0xFF28313A),
+    text = Color(0xFFDCE3EA),
+    textSecondary = Color(0xFFA6B2BD),
+    textTertiary = Color(0xFF7A8794),
+    accent = Color(0xFF77A3C7),
+    separator = Color(0xFF2C353E),
+)
+
 /** 纯黑：OLED 省电、夜里最暗。*/
 val BlackLumenColors = LumenColors(
     isDark = true,
@@ -106,13 +132,15 @@ val BlackLumenColors = LumenColors(
     separator = Color(0xFF262626),
 )
 
-/** 按主题 + 系统明暗算出实际配色。SYSTEM 跟着系统走，其余主题跟系统无关。*/
+/** 按主题 + 系统明暗算出实际配色。
+ *  SYSTEM 完全跟着系统走；护眼绿/灰蓝这两套「彩色纸」在系统深色下换成深色纸，
+ *  米纸/白纸保持纸感不变，墨黑/纯黑本来就是深色。*/
 fun lumenColorsFor(theme: ReaderTheme, systemDark: Boolean): LumenColors = when (theme) {
     ReaderTheme.SYSTEM -> if (systemDark) DarkLumenColors else LightLumenColors
     ReaderTheme.PAPER -> LightLumenColors
     ReaderTheme.WHITE -> WhiteLumenColors
-    ReaderTheme.GREEN -> GreenLumenColors
-    ReaderTheme.BLUE -> BlueLumenColors
+    ReaderTheme.GREEN -> if (systemDark) GreenDarkLumenColors else GreenLumenColors
+    ReaderTheme.BLUE -> if (systemDark) BlueDarkLumenColors else BlueLumenColors
     ReaderTheme.INK -> DarkLumenColors
     ReaderTheme.BLACK -> BlackLumenColors
 }

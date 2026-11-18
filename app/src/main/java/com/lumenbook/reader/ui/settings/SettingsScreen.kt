@@ -3,6 +3,7 @@ package com.lumenbook.reader.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +54,7 @@ import com.lumenbook.reader.data.RemoteRelease
 import com.lumenbook.reader.data.UpdateChecker
 import com.lumenbook.reader.data.UpdateResult
 import com.lumenbook.reader.ui.theme.LocalLumenColors
+import com.lumenbook.reader.ui.theme.lumenColorsFor
 import kotlinx.coroutines.launch
 
 @Composable
@@ -255,6 +257,8 @@ fun SettingsScreen(
 @Composable
 private fun ThemeSwatch(theme: ReaderTheme, selected: Boolean, onClick: () -> Unit) {
     val colors = LocalLumenColors.current
+    // 深色模式下护眼绿/灰蓝显示的是深色纸，小圆点也要跟着变
+    val resolved = lumenColorsFor(theme, isSystemInDarkTheme())
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -265,7 +269,7 @@ private fun ThemeSwatch(theme: ReaderTheme, selected: Boolean, onClick: () -> Un
             modifier = Modifier
                 .size(40.dp)
                 .clip(RoundedCornerShape(50))
-                .background(Color(theme.swatch))
+                .background(resolved.page)
                 .border(
                     width = if (selected) 2.dp else 1.dp,
                     color = if (selected) colors.accent else colors.separator,
