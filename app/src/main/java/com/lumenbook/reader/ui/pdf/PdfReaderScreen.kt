@@ -92,8 +92,22 @@ private class PdfDocument(file: File) : Closeable {
     var lastError: String? = null
         private set
 
+    /** 小页缓存：翻页时相邻页提前渲染好，避免每翻一页都先白一帧再出图。 */
+    private val cache = object : LinkedHashMap<String, Bitmap>(4, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean = size > MAX_CACHED_PAGES
+    }
+
+    /** 已经渲染好的页（有就直接用，不再进渲染队列）。 */
+    fun cached(index: Int, widthPx: Int): Bitmap? = synchronized(cache) { cache[key(index, widthPx)] }
+
+    private fun key(index: Int, widthPx: Int) = "$index@$widthPx"
+
+    /** 串行渲染一页并放进缓存。 */
     suspend fun render(index: Int, widthPx: Int): Bitmap? = withContext(Dispatchers.IO) {
+        synchronized(cache) { cache[key(index, widthPx)] }?.let { return@withContext it }
         mutex.withLock {
+            // 等锁期间可能已经被别的调用渲染好了
+            synchronized(cache) { cache[key(index, widthPx)] }?.let { return@withContext it }
             lastError = null
             if (index !in 0 until pageCount || widthPx <= 0) {
                 lastError = "页码越界"
@@ -111,6 +125,7 @@ private class PdfDocument(file: File) : Closeable {
                 // PDF 的页面一般是白纸，先铺白再画，免得黑底。
                 bitmap.eraseColor(Color.WHITE)
                 page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                synchronized(cache) { cache[key(index, widthPx)] = bitmap }
                 bitmap
             } catch (t: Throwable) {
                 lastError = "render 失败：${t.javaClass.simpleName} ${t.message.orEmpty()}"
@@ -121,9 +136,22 @@ private class PdfDocument(file: File) : Closeable {
         }
     }
 
+    /** 预渲染：给翻页做准备的相邻页。失败也无所谓，真正显示时会再试一次。 */
+    suspend fun prefetch(index: Int, widthPx: Int) {
+        if (index !in 0 until pageCount || widthPx <= 0) return
+        if (cached(index, widthPx) != null) return
+        runCatching { render(index, widthPx) }
+    }
+
     override fun close() {
         runCatching { renderer.close() }
         runCatching { descriptor.close() }
+        synchronized(cache) { cache.clear() }
+    }
+
+    private companion object {
+        /** 最多留 3 页（当前页 + 前后各一页），一页 ARGB_8888 大约 6MB。 */
+        const val MAX_CACHED_PAGES = 3
     }
 }
 
@@ -194,6 +222,14 @@ fun PdfReaderScreen(
             renderedPage = page
             val fraction = if (pageCount > 1) page.toFloat() / (pageCount - 1) else 0f
             container.library.saveLocation(book.id, "page:$page", fraction)
+        }
+    }
+
+    // 预渲染相邻页：翻过去时直接有图，不会先白一帧再出图
+    LaunchedEffect(pagerState, screenWidthPx) {
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            document.prefetch(page + 1, screenWidthPx)
+            document.prefetch(page - 1, screenWidthPx)
         }
     }
 

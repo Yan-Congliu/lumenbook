@@ -27,6 +27,8 @@ data class Book(
     val progress: Float = 0f,
     /** 阅读位置（EPUB 用 CFI 字符串），下次打开据此恢复。 */
     val location: String? = null,
+    /** 文件指纹（大小 + 首尾内容摘要），用来识别「同一本书重复导入」。 */
+    val fingerprint: String? = null,
     val finished: Boolean = false,
 )
 

@@ -548,6 +548,41 @@ SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用�
 实测（Android 16 模拟器，深色模式）：六个纸色一行排开、标签单行，行本身可横滑；圆点显示的是各主题在深色模式下的实际纸色
 （护眼绿=墨绿、灰蓝=深蓝、墨黑/纯黑=各自深色）。
 
+## 阶段 8：优化一轮（0.6.19）
+
+用户点了五项性能优化，另加三条自定义要求。
+
+### 功能改动
+
+1. **全书搜索**：菜单里「目录」和「书签」之间加了「搜索」，点开是「搜索这本书」面板 —— 输入关键词，
+   下面按章列出命中片段（命中词用【】标出）、显示章节名，点一条直接跳过去。
+   - `reader.js`：`searchBook(query, limit = 80)` 走 `view.search({ query })` 的 async generator
+     （每章先 yield `{ label, subitems }`，最后 yield `'done'`）；`excerptText()` 把 foliate 的
+     `{ pre, match, post }` 拍平成「前文【命中】后文」，截 120 字。
+   - Kotlin：`ReaderSearchSheet`（ModalBottomSheet + OutlinedTextField + LazyColumn），
+     `ReaderBridge.onSearchResults(json)` → `ui.searchHits`；点结果 `window.lumen.goToCfi(cfi)`。
+2. **工具栏动画更柔**：`fadeIn(tween(260, FastOutSlowInEasing)) + slideInVertically(260, -it/12)`，
+   收起 `fadeOut(240) + slideOutVertically(240)`。
+3. **左上角返回箭头和书名同时显示**：`ReaderMetaLayer` 左上改成 Row（箭头 + 2dp 间隔 + 书名），
+   书名一直在，箭头出现时整体右移一点。
+4. **重复导入去重**：`Book.fingerprint` + `LibraryDb` VERSION=4（`fingerprint TEXT` 列 + 索引）、
+   `findByFingerprint`、`updateFingerprint`；`LibraryRepository.fingerprintOf()` = 大小 + 前 64KB 的 SHA-256，
+   导入前查指纹，命中就跳过并在 toast 里说「跳过 N 本已有的」。
+   老库里没有指纹的书由 `backfillFingerprints()` 在启动时补算（只补第一次出现的那条）。
+
+### 性能改动
+
+- **PDF 翻页不闪白**：`PdfDocument` 加 3 页的 LRU 位图缓存（`MAX_CACHED_PAGES = 3`，一页 ARGB_8888 约 6MB），
+  另有 `prefetch()` 在翻页落定后预渲染前后各一页 → 翻过去直接有图。
+- **书库滚动更跟手 / 省内存**：新增 `CoverCache`（`LruCache`，上限 24MB，按 RGB_565 每像素 2 字节折算），
+  封面小图不再每次滚动都从磁盘重新解码。
+- **批量导入更快**：`import()` 用 `coroutineScope + async + Semaphore(2)` 并发复制，计数走 `Mutex`。
+
+实测（Android 16 模拟器，0.6.19 debug）：同一文件夹二次导入 → toast「跳过 6 本已有的」，书库数量不变；
+菜单顺序为 目录 / 搜索 / 书签 / 主题与字体；工具栏展开时左上箭头 + 书名同显。
+搜索链路的端到端验证在桌面 `reader_smoke.py` 的页面上做（模拟器 adb 没法可靠地给 Compose 输入框聚焦打字）：
+`window.lumen.search('雪')` → 5 条命中，excerpt 形如「第一章 【雪】落」，chapter 为「第一章 雪落」。
+
 ## 下一步
 
 1. 用户验收 0.6.15：外观设置（纸色/字体/排版/书库外观）+ 阅读页信息层与菜单按钮。

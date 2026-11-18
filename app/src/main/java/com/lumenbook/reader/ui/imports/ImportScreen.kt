@@ -82,6 +82,10 @@ fun ImportScreen(container: AppContainer, onClose: () -> Unit) {
         importing = false
         val message = buildString {
             if (outcome.added > 0) append("导入 ${outcome.added} 本")
+            if (outcome.skipped > 0) {
+                if (isNotEmpty()) append("，")
+                append("跳过 ${outcome.skipped} 本已有的")
+            }
             if (outcome.failed.isNotEmpty()) {
                 if (isNotEmpty()) append("，")
                 append("${outcome.failed.size} 本失败")

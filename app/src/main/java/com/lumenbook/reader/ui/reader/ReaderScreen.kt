@@ -3,6 +3,8 @@ package com.lumenbook.reader.ui.reader
 import android.annotation.SuppressLint
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.ui.draw.clip
@@ -21,6 +23,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -57,6 +62,8 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
@@ -87,6 +94,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -133,7 +141,14 @@ private class ReaderUi {
     var totalPages by mutableIntStateOf(0)
     /** 每次用户碰一下正文就 +1，用来给「自动收起工具栏」的 6 秒计时续命。 */
     var activity by mutableIntStateOf(0)
+    /** 全书搜索结果（章节 + 摘录 + CFI）。 */
+    var searchHits by mutableStateOf<List<SearchHit>>(emptyList())
+    var searching by mutableStateOf(false)
+    var searchDone by mutableStateOf(false)
 }
+
+/** 一条全书搜索结果。 */
+private data class SearchHit(val cfi: String, val excerpt: String, val chapter: String)
 
 private fun BookFormat.usesFoliate(): Boolean = when (this) {
     BookFormat.EPUB, BookFormat.MOBI, BookFormat.AZW3, BookFormat.FB2, BookFormat.CBZ -> true
@@ -233,6 +248,7 @@ class ReaderBridge(
     private val touched: () -> Unit,
     private val hidden: () -> Unit,
     private val pageInfo: (Int, Int) -> Unit,
+    private val searchResults: (String?) -> Unit,
 ) {
     @JavascriptInterface
     fun onBoot() {
@@ -285,6 +301,12 @@ class ReaderBridge(
     @JavascriptInterface
     fun onPageInfo(current: Int, total: Int) {
         main.post { pageInfo(current, total) }
+    }
+
+    /** 全书搜索结果：{"query": "...", "hits":[{cfi, excerpt, chapter}]}。 */
+    @JavascriptInterface
+    fun onSearchResults(json: String?) {
+        main.post { searchResults(json) }
     }
 
     @JavascriptInterface
@@ -384,6 +406,7 @@ fun ReaderScreen(
     var showToc by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showStyle by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) }
     var bookmarks by remember(book.id) { mutableStateOf<List<Bookmark>>(emptyList()) }
     // 当前这一页有没有书签：CFI 精确到位置，换个段落就算另一处
@@ -438,6 +461,24 @@ fun ReaderScreen(
             pageInfo = { current, total ->
                 ui.page = current.coerceAtLeast(1)
                 ui.totalPages = total.coerceAtLeast(0)
+            },
+            searchResults = { json ->
+                val obj = runCatching { JSONObject(json ?: "{}") }.getOrNull()
+                val arr = obj?.optJSONArray("hits")
+                val hits = mutableListOf<SearchHit>()
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val o = arr.optJSONObject(i) ?: continue
+                        hits += SearchHit(
+                            cfi = o.optString("cfi", ""),
+                            excerpt = o.optString("excerpt", ""),
+                            chapter = o.optString("chapter", ""),
+                        )
+                    }
+                }
+                ui.searchHits = hits
+                ui.searching = false
+                ui.searchDone = true
             },
         )
     }
@@ -569,8 +610,19 @@ fun ReaderScreen(
         // Books 的样子：没有整条栏，只有上下两道柔和渐变 + 右下角一个菜单按钮 + 底部进度条。
         AnimatedVisibility(
             visible = ui.chromeVisible,
-            enter = fadeIn(animationSpec = tween(190)),
-            exit = fadeOut(animationSpec = tween(170)),
+            // 淡入淡出做得更慢更柔：进出各 260ms，用缓入缓出，再叠一点点位移，切换时不会「啪」地一下出现
+            enter = fadeIn(
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+            ) + slideInVertically(
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+                initialOffsetY = { -it / 12 },
+            ),
+            exit = fadeOut(
+                animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+            ) + slideOutVertically(
+                animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+                targetOffsetY = { -it / 12 },
+            ),
         ) {
             Box(Modifier.fillMaxSize()) {
                 // 上下两道柔和的遮罩，让文字在栏下面自然暗下去，而不是被硬切一刀。
@@ -678,9 +730,42 @@ fun ReaderScreen(
             bookmarkCount = bookmarks.size,
             colors = colors,
             onToc = { showMenu = false; showToc = true },
+            onSearch = {
+                showMenu = false
+                showSearch = true
+                ui.searchHits = emptyList()
+                ui.searchDone = false
+                ui.searching = false
+            },
             onBookmarks = { showMenu = false; showToc = true },
             onStyle = { showMenu = false; showStyle = true },
             onDismiss = { showMenu = false },
+        )
+    }
+
+    if (showSearch) {
+        ReaderSearchSheet(
+            colors = colors,
+            searching = ui.searching,
+            done = ui.searchDone,
+            hits = ui.searchHits,
+            onQuery = { q ->
+                ui.searching = true
+                ui.searchDone = false
+                ui.searchHits = emptyList()
+                webView.evaluateJavascript(
+                    "window.lumen && window.lumen.search(${JSONObject.quote(q)})",
+                    null,
+                )
+            },
+            onOpen = { hit ->
+                showSearch = false
+                webView.evaluateJavascript(
+                    "window.lumen && window.lumen.goToCfi(${JSONObject.quote(hit.cfi)})",
+                    null,
+                )
+            },
+            onDismiss = { showSearch = false },
         )
     }
 
@@ -857,33 +942,35 @@ private fun ReaderMetaLayer(
             .padding(horizontal = 14.dp, vertical = 6.dp),
     ) {
         Box(Modifier.fillMaxWidth()) {
-            if (chrome) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(50))
-                        .clickable(onClick = onBack),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回书库",
-                        tint = colors.text,
-                        modifier = Modifier.size(19.dp),
-                    )
+            // 左上角：工具栏展开时是「返回箭头 + 书名」，收起时只有书名 —— 书名一直在，位置不变
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.align(Alignment.CenterStart).fillMaxWidth(0.44f),
+            ) {
+                if (chrome) {
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(50))
+                            .clickable(onClick = onBack),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回书库",
+                            tint = colors.text,
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(2.dp))
                 }
-            } else {
                 Text(
                     text = title,
                     fontSize = 11.sp,
                     color = colors.textTertiary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .fillMaxWidth(0.42f)
-                        .align(Alignment.CenterStart)
-                        .padding(vertical = 5.dp),
+                    modifier = Modifier.padding(vertical = 5.dp),
                 )
             }
             Text(
@@ -932,6 +1019,7 @@ private fun ReaderMenuSheet(
     bookmarkCount: Int,
     colors: LumenColors,
     onToc: () -> Unit,
+    onSearch: () -> Unit,
     onBookmarks: () -> Unit,
     onStyle: () -> Unit,
     onDismiss: () -> Unit,
@@ -942,6 +1030,8 @@ private fun ReaderMenuSheet(
                 MenuRow("目录", colors = colors, onClick = onToc)
                 HorizontalDivider(color = colors.separator, modifier = Modifier.padding(horizontal = 22.dp))
             }
+            MenuRow("搜索", colors = colors, onClick = onSearch)
+            HorizontalDivider(color = colors.separator, modifier = Modifier.padding(horizontal = 22.dp))
             MenuRow(
                 label = "书签",
                 trailing = if (bookmarkCount > 0) "$bookmarkCount" else null,
@@ -950,6 +1040,98 @@ private fun ReaderMenuSheet(
             )
             HorizontalDivider(color = colors.separator, modifier = Modifier.padding(horizontal = 22.dp))
             MenuRow("主题与字体", colors = colors, onClick = onStyle)
+        }
+    }
+}
+
+/** 全书搜索：输入关键词，列出命中片段，点一条直接跳过去。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReaderSearchSheet(
+    colors: LumenColors,
+    searching: Boolean,
+    done: Boolean,
+    hits: List<SearchHit>,
+    onQuery: (String) -> Unit,
+    onOpen: (SearchHit) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    val submit = {
+        val q = text.trim()
+        if (q.isNotEmpty()) onQuery(q)
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.surface) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 22.dp)
+                .padding(bottom = 20.dp),
+        ) {
+            Text("搜索这本书", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = { Text("输入关键词", color = colors.textTertiary, fontSize = 14.sp) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = colors.text,
+                    unfocusedTextColor = colors.text,
+                    focusedBorderColor = colors.accent,
+                    unfocusedBorderColor = colors.separator,
+                    cursorColor = colors.accent,
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { submit() }),
+                trailingIcon = {
+                    TextButton(onClick = submit) {
+                        Text("搜索", color = colors.accent, fontSize = 14.sp)
+                    }
+                },
+            )
+            Spacer(Modifier.height(10.dp))
+            val status = when {
+                searching -> "正在搜索…"
+                done && hits.isEmpty() -> "没有找到「${text.trim()}」"
+                done -> "${hits.size} 处结果"
+                else -> ""
+            }
+            if (status.isNotEmpty()) {
+                Text(status, color = colors.textTertiary, fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+            }
+            LazyColumn(Modifier.fillMaxWidth().height(340.dp)) {
+                items(hits) { hit ->
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpen(hit) }
+                            .padding(vertical = 10.dp),
+                    ) {
+                        Text(
+                            hit.excerpt.ifBlank { "（没有可显示的片段）" },
+                            fontSize = 14.sp,
+                            color = colors.text,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (hit.chapter.isNotBlank()) {
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                hit.chapter,
+                                fontSize = 11.sp,
+                                color = colors.textTertiary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = colors.separator)
+                }
+            }
         }
     }
 }

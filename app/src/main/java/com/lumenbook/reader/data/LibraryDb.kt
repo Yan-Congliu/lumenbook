@@ -29,6 +29,7 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
                 last_opened_at INTEGER,
                 progress REAL NOT NULL DEFAULT 0,
                 location TEXT,
+                fingerprint TEXT,
                 finished INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent(),
@@ -68,6 +69,11 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_bookmarks_book ON bookmarks(book_id)")
         }
+        // v3 -> v4: fingerprint, used to skip duplicate imports.
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE books ADD COLUMN fingerprint TEXT")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_books_fingerprint ON books(fingerprint)")
+        }
     }
 
     fun all(): List<Book> = readableDatabase
@@ -80,6 +86,21 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
 
     fun find(id: Long): Book? = readableDatabase
         .rawQuery("SELECT * FROM books WHERE id = ?", arrayOf(id.toString()))
+        .use { c -> if (c.moveToFirst()) c.toBook() else null }
+
+    /** Find a book by its fingerprint, so imports can skip what we already have. */
+    /** 给老库里的书补指纹（老版本入库时还没有这一列）。 */
+    fun updateFingerprint(id: Long, fingerprint: String?) {
+        writableDatabase.update(
+            "books",
+            android.content.ContentValues().apply { put("fingerprint", fingerprint) },
+            "id = ?",
+            arrayOf(id.toString()),
+        )
+    }
+
+    fun findByFingerprint(fingerprint: String): Book? = readableDatabase
+        .query("books", null, "fingerprint = ?", arrayOf(fingerprint), null, null, null)
         .use { c -> if (c.moveToFirst()) c.toBook() else null }
 
     fun insert(book: Book): Long {
@@ -95,6 +116,7 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
             put("last_opened_at", book.lastOpenedAt)
             put("progress", book.progress)
             put("location", book.location)
+            put("fingerprint", book.fingerprint)
             put("finished", if (book.finished) 1 else 0)
         }
         return writableDatabase.insert("books", null, values)
@@ -232,6 +254,7 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
         else getLong(getColumnIndexOrThrow("last_opened_at")),
         progress = getFloat(getColumnIndexOrThrow("progress")),
         location = getStringOrNull("location"),
+        fingerprint = getStringOrNull("fingerprint"),
         finished = getInt(getColumnIndexOrThrow("finished")) != 0,
     )
 
@@ -242,6 +265,6 @@ class LibraryDb(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSIO
 
     private companion object {
         const val NAME = "lumenbook.db"
-        const val VERSION = 3
+        const val VERSION = 4
     }
 }

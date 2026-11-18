@@ -46,10 +46,13 @@ fun BookCover(
 ) {
     val shape = RoundedCornerShape(corner)
     val (c1, c2) = coverPaletteFor(book.title)
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, book.coverPath) {
+    val bitmap by produceState<ImageBitmap?>(initialValue = book.coverPath?.let { CoverCache.get(it) }, book.coverPath) {
+        if (value != null) return@produceState
         value = withContext(Dispatchers.IO) {
             book.coverPath?.let { path ->
-                runCatching { decodeSampled(File(path), 480)?.asImageBitmap() }.getOrNull()
+                CoverCache.get(path) ?: runCatching { decodeSampled(File(path), 480)?.asImageBitmap() }
+                    .getOrNull()
+                    ?.also { CoverCache.put(path, it) }
             }
         }
     }
@@ -126,6 +129,28 @@ fun BookCover(
             }
         }
     }
+}
+
+/** 书库封面小图的内存缓存：滚动时不再每次从磁盘重新解码，同时限制总占用（省的也是内存）。 */
+internal object CoverCache {
+    /** 24MB 上限，按 RGB_565 每像素 2 字节折算。 */
+    private const val MAX_KB = 24 * 1024
+
+    private val cache = object : android.util.LruCache<String, ImageBitmap>(MAX_KB) {
+        override fun sizeOf(key: String, value: ImageBitmap): Int =
+            (value.width * value.height * 2) / 1024
+
+        // 被淘汰的图交给 GC，不主动 recycle：上一帧可能还在画
+        override fun entryRemoved(evicted: Boolean, key: String, oldValue: ImageBitmap, newValue: ImageBitmap?) = Unit
+    }
+
+    fun get(path: String): ImageBitmap? = cache.get(path)
+
+    fun put(path: String, bitmap: ImageBitmap) {
+        cache.put(path, bitmap)
+    }
+
+    fun clear() = cache.evictAll()
 }
 
 /** 只为缩略图解码，先读 bounds 再按 2 的幂降采样，避免在大图上吃内存。*/

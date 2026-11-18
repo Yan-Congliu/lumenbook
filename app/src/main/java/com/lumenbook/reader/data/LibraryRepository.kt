@@ -6,9 +6,16 @@ import android.provider.OpenableColumns
 import com.lumenbook.reader.importer.BookImporter
 import com.lumenbook.reader.importer.EpubRewriter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
@@ -23,60 +30,129 @@ class LibraryRepository(
     private val libraryDir = File(context.filesDir, "library").apply { mkdirs() }
     private val coverDir = File(context.filesDir, "covers").apply { mkdirs() }
 
-    data class ImportOutcome(val added: Int, val failed: List<String>)
+    data class ImportOutcome(val added: Int, val skipped: Int = 0, val failed: List<String>)
 
     suspend fun refresh() = withContext(Dispatchers.IO) {
         _books.value = db.all()
     }
 
-    /** 把用户选中的文件复制进应用私有目录，抠出元数据，再入库。 */
+    /** 把用户选中的文件复制进应用私有目录，抠出元数据，再入库。同一本书（指纹相同）直接跳过。 */
     suspend fun import(uris: List<Uri>): ImportOutcome = withContext(Dispatchers.IO) {
         var added = 0
+        var skipped = 0
         val failed = mutableListOf<String>()
+        val gate = Mutex()
+        val permits = Semaphore(2)
 
-        uris.forEach { uri ->
-            val displayName = resolverName(uri)
-            try {
-                takeReadPermission(uri)
-
-                val header = context.contentResolver.openInputStream(uri)?.use { input ->
-                    val buf = ByteArray(64)
-                    val n = input.read(buf)
-                    if (n > 0) buf.copyOf(n) else ByteArray(0)
-                } ?: ByteArray(0)
-
-                val format = BookImporter.detect(displayName, header)
-                val id = UUID.randomUUID().toString().replace("-", "")
-                val target = File(libraryDir, "$id.${format.name.lowercase()}")
-
-                val copied = context.contentResolver.openInputStream(uri)?.use { input ->
-                    target.outputStream().use { output -> input.copyTo(output) }
+        coroutineScope {
+            uris.map { uri ->
+                async {
+                    val displayName = resolverName(uri)
+                    permits.withPermit {
+                        try {
+                            takeReadPermission(uri)
+                            val fingerprint = fingerprintOf(uri)
+                            if (fingerprint != null && db.findByFingerprint(fingerprint) != null) {
+                                gate.withLock { skipped++ }
+                            } else {
+                                importOne(uri, displayName, fingerprint)
+                                gate.withLock { added++ }
+                            }
+                        } catch (e: Exception) {
+                            gate.withLock {
+                                failed += "$displayName（${e.message ?: e::class.simpleName}）"
+                            }
+                        }
+                    }
                 }
-                if (copied == null) error("打不开这个文件")
-
-                val meta = BookImporter.sniff(target, format)
-                val coverFile = meta.cover?.let { bytes -> saveCover(id, bytes) }
-
-                db.insert(
-                    Book(
-                        title = (meta.title ?: fallbackTitle(displayName)).trim().ifBlank { "未命名" },
-                        author = meta.author?.trim()?.ifBlank { null },
-                        format = format,
-                        localPath = target.absolutePath,
-                        sourceUri = uri.toString(),
-                        coverPath = coverFile?.absolutePath,
-                        sizeBytes = target.length(),
-                        addedAt = System.currentTimeMillis(),
-                    ),
-                )
-                added++
-            } catch (e: Exception) {
-                failed += "$displayName（${e.message ?: e::class.simpleName}）"
-            }
+            }.awaitAll()
         }
 
         _books.value = db.all()
-        ImportOutcome(added = added, failed = failed)
+        ImportOutcome(added = added, skipped = skipped, failed = failed)
+    }
+
+    /** 单个文件的复制 + 元数据 + 入库。 */
+    private fun importOne(uri: Uri, displayName: String, fingerprint: String?) {
+        val header = context.contentResolver.openInputStream(uri)?.use { input ->
+            val buf = ByteArray(64)
+            val n = input.read(buf)
+            if (n > 0) buf.copyOf(n) else ByteArray(0)
+        } ?: ByteArray(0)
+
+        val format = BookImporter.detect(displayName, header)
+        val id = UUID.randomUUID().toString().replace("-", "")
+        val target = File(libraryDir, "$id.${format.name.lowercase()}")
+
+        val copied = context.contentResolver.openInputStream(uri)?.use { input ->
+            target.outputStream().use { output -> input.copyTo(output) }
+        }
+        if (copied == null) error("打不开这个文件")
+
+        val meta = BookImporter.sniff(target, format)
+        val coverFile = meta.cover?.let { bytes -> saveCover(id, bytes) }
+
+        db.insert(
+            Book(
+                title = (meta.title ?: fallbackTitle(displayName)).trim().ifBlank { "未命名" },
+                author = meta.author?.trim()?.ifBlank { null },
+                format = format,
+                localPath = target.absolutePath,
+                sourceUri = uri.toString(),
+                coverPath = coverFile?.absolutePath,
+                sizeBytes = target.length(),
+                addedAt = System.currentTimeMillis(),
+                fingerprint = fingerprint,
+            ),
+        )
+    }
+
+    /**
+     * 文件指纹：大小 + 前 64KB 的 SHA-256。
+     * 同一本书换个文件名再导入也能认出来；不同书几乎不可能撞。
+     */
+    /** 本机文件的指纹，算法与 [fingerprintOf] 完全一致（大小 + 前 64KB）。 */
+    private fun fingerprintOfFile(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        digest.update(file.length().toString().toByteArray())
+        file.inputStream().use { input ->
+            val buf = ByteArray(64 * 1024)
+            val n = input.read(buf)
+            if (n > 0) digest.update(buf, 0, n)
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun fingerprintOf(uri: Uri): String? = runCatching {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        val size = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        digest.update(size.toString().toByteArray())
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val buf = ByteArray(64 * 1024)
+            val n = input.read(buf)
+            if (n > 0) digest.update(buf, 0, n)
+        }
+        digest.digest().joinToString("") { "%02x".format(it) }
+    }.getOrNull()
+
+    /**
+     * 老版本导入的书没有指纹：启动时补算一次，去重才对它们有效。
+     * 只补不算重的（同一指纹只给最老的一条，后面重复的留着让用户自己删）。
+     */
+    suspend fun backfillFingerprints() = withContext(Dispatchers.IO) {
+        val pending = db.all().filter { it.fingerprint.isNullOrBlank() && it.localPath != null }
+        if (pending.isEmpty()) return@withContext
+        val seen = mutableSetOf<String>()
+        for (book in pending.sortedBy { it.addedAt }) {
+            val path = book.localPath ?: continue
+            val file = File(path)
+            if (!file.exists()) continue
+            val fp = runCatching { fingerprintOfFile(file) }.getOrNull() ?: continue
+            if (!seen.add(fp)) continue          // 这一轮里已经见过同一本，留给用户手动处理
+            if (db.findByFingerprint(fp) != null) continue
+            db.updateFingerprint(book.id, fp)
+        }
+        _books.value = db.all()
     }
 
     suspend fun rename(id: Long, title: String, author: String?) = withContext(Dispatchers.IO) {

@@ -73,7 +73,11 @@ fun LumenAppRoot(
     var tab by rememberSaveable { mutableStateOf(Tab.LIBRARY) }
     var readingId by rememberSaveable { mutableStateOf<Long?>(null) }
 
-    LaunchedEffect(Unit) { container.library.refresh() }
+    LaunchedEffect(Unit) {
+        container.library.refresh()
+        // 老库补指纹：补完再去重才认得出以前导入过的书
+        container.library.backfillFingerprints()
+    }
 
     // 正在读的书；书被删掉时自动退回书库
     val readingBook = readingId?.let { id -> books.firstOrNull { it.id == id } }

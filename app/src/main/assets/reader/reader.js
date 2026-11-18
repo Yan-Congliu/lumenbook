@@ -577,6 +577,54 @@ function attachDocGestures(doc) {
 }
 
 // Kotlin 侧调用入口
+/**
+ * 全书搜索：foliate 的 view.search() 是个 async generator，
+ * 每个章节先 yield 一个 { label, subitems }，再逐条 yield { cfi, excerpt }。
+ * 这里统一收成扁平列表，搜完一次性回给 Kotlin（避免太多桥调用）。
+ */
+/** foliate 的 excerpt 是 { pre, match, post } 对象，这里拍平成一行可读文字。 */
+function excerptText(ex) {
+  if (!ex) return ''
+  if (typeof ex === 'string') return ex
+  const pre = ex.pre || ''
+  const match = ex.match || ''
+  const post = ex.post || ''
+  return `${pre}【${match}】${post}`.trim().slice(0, 120)
+}
+
+async function searchBook(query, limit = 80) {
+  const q = String(query || '').trim()
+  if (!q || !view.book) return []
+  const hits = []
+  try {
+    for await (const r of view.search({ query: q })) {
+      if (r === 'done') break
+      if (r && Array.isArray(r.subitems)) {
+        for (const it of r.subitems) {
+          if (hits.length >= limit) break
+          hits.push({
+            cfi: it.cfi || '',
+            excerpt: excerptText(it.excerpt),
+            chapter: r.label || '',
+          })
+        }
+      } else if (r && r.cfi) {
+        if (hits.length >= limit) break
+        hits.push({ cfi: r.cfi, excerpt: excerptText(r.excerpt), chapter: '' })
+      }
+      if (hits.length >= limit) break
+    }
+  } catch (e) {
+    stage('搜索失败', String(e))
+  }
+  return hits
+}
+
+async function searchAndReport(query) {
+  const hits = await searchBook(query)
+  bridge('onSearchResults', JSON.stringify({ query, hits }))
+}
+
 window.lumen = {
   open,
   applyTheme,
@@ -584,6 +632,7 @@ window.lumen = {
   goToHref,
   goToFraction,
   next,
+  search: searchAndReport,
   prev,
   goToCfi,
 }
