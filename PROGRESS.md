@@ -270,12 +270,16 @@ CBZ / FB2 验证            scripts/make_test_misc.py 自造样书，桌面全�
   ARGB_8888**，给 RGB_565 会抛异常，而旧代码 `catch { null }` 把异常吞了，界面永远停在「正在渲染…」。
   现在改成 ARGB_8888，并且失败时把 `openPage 失败 / render 失败：异常类名 + message` 画在页面上 + 一个「重试」按钮，
   打开失败也会显示原因。**教训：凡是 catch 完就返回 null 的渲染路径，真机上等于「永远转圈」，一定要把原因给出来。**
+- **0.6.7（PDF 能滑着翻页）**：Pager 的每一页里挂 `detectTransformGestures` 会把**单指拖动也吃掉**，
+  `HorizontalPager` 收不到拖动事件 → 只能拖进度条换页。改用
+  `Modifier.transformable(state = transformState, canPan = { scale > 1.01f })`：没放大时单指拖动放行给 Pager，
+  放大后才由 transformable 接管平移；双指缩放始终可用。
 
 ## 下一步
 
-1. 用户验收 0.6.3/0.6.4：正文起始位置、书签、设置里的背景图、书库搜索排序、CBZ 漫画。
-2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.4-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
-3. MOBI/AZW3 用真实样书验证（自造样书已确认解析链路可用）。
+1. 用户验收 0.6.7：PDF 是不是能左右滑着翻页（没放大时）、放大后能拖、双击无效属预期。
+2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.7-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
+3. MOBI/AZW3 真实样书暂不追（用户明确说不做），自造 MOBI6 样书已确认解析链路与目录。
 4. 阶段 8 剩下：PDF 目录（需要换 PDF 解析库）、按标签/系列分组、阅读页页码（foliate 只给百分比）。
 
 

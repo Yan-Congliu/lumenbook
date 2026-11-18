@@ -9,7 +9,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -324,6 +325,14 @@ private fun PdfPage(
     var attempt by remember(index, widthPx) { mutableIntStateOf(0) }
     var scale by remember(index) { mutableFloatStateOf(1f) }
     var offset by remember(index) { androidx.compose.runtime.mutableStateOf(Offset.Zero) }
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        scale = (scale * zoomChange).coerceIn(1f, 4f)
+        offset = if (scale <= 1.01f) {
+            Offset.Zero
+        } else {
+            Offset(offset.x + panChange.x, offset.y + panChange.y)
+        }
+    }
 
     LaunchedEffect(index, widthPx, attempt) {
         bitmap = null
@@ -362,16 +371,12 @@ private fun PdfPage(
                         translationX = offset.x
                         translationY = offset.y
                     }
-                    .pointerInput(index) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(1f, 4f)
-                            offset = if (scale <= 1.01f) {
-                                Offset.Zero
-                            } else {
-                                Offset(offset.x + pan.x, offset.y + pan.y)
-                            }
-                        }
-                    }
+                    // canPan 只在放大后才为真：没放大时单指拖动必须放行给 Pager，否则翻不动页。
+                    // 双指缩放始终可用。
+                    .transformable(
+                        state = transformState,
+                        canPan = { scale > 1.01f },
+                    )
                     .pointerInput(index) {
                         detectTapZones(
                             onCenter = onCenterTap,

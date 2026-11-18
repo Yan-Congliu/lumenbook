@@ -23,3 +23,7 @@ Thumbs.db
 # Python
 __pycache__/
 *.pyc
+
+# 测试书/样书不进仓库
+*.epub
+!app/src/main/assets/**
