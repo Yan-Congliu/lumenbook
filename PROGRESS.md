@@ -425,10 +425,32 @@ SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用�
 - 中间点一下 → 工具栏隐藏（正文顶到状态栏下面），再点 → 出来，正文被推开、不遮挡。
 - 右上角目录 → 三个章节列表 → 点「第三章 长夜」→ 直接跳过去（100%）。
 
+## 阶段 8：长文档点右边反而往前翻（0.6.13）
+
+0.6.12 发出去后用户说「你自己跑一下试试，似乎有问题」。在模拟器里用《中国2185》（整本书只有一个 xhtml 的超长文档）
+复现出来了，两个真问题：
+
+1. **超长单文档书的点击坐标是「长带坐标」，不是屏幕坐标**。这类书 foliate 把整本排成一条 10 万像素宽的横向长带，
+   正文 iframe 跟着变成 104568px 宽、由外层容器横向滚动。于是 `clientX` 是长带里的坐标（点一下是 5479~6644），
+   除以 `innerWidth` 永远落在左侧 30% —— 表现为「点右边反而往前翻」「点十下也不动」。
+   修法：用 `win.frameElement.getBoundingClientRect()` 把坐标换算回屏幕坐标再算比例：
+   ```js
+   const r = frame.getBoundingClientRect()
+   const scale = r.width && win.innerWidth ? r.width / win.innerWidth : 1
+   screenX = r.left + x * scale     // r.left 是负的滚动偏移
+   tapZone(screenX / (window.innerWidth || 360))
+   ```
+   普通书 `frameLeft = 0`，行为不变；长文档 `frameLeft = -5170` 时 screenX 才落回 0~412。
+2. **动画期间连点会丢**：foliate 在翻页动画（约 300ms）里会忽略新的 `next()/prev()`。
+   修法：`flip(dir)` 串行化 + 最多记一个待办 —— 动画结束后立刻补上，点几下就翻几页。
+
+实测（release 包，Android 16 模拟器）：《中国2185》45% → 连点 4 下 → 46%（约 4 页）；左 18% 连点回翻；中间点呼出工具栏正常。
+普通书（TXT 派生 EPUB / EPUB 3 章）点击分区与上一版一致。
+
 ## 下一步
 
-1. 用户验收 0.6.12：点击分区（左 30 / 中 40 / 右 30）、第一下就响应、工具栏不遮正文、目录能跳。
-2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.12-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
+1. 用户验收 0.6.13：点右边往前翻、点左边往回翻、连点不丢、工具栏不遮正文、目录可跳。
+2. 用户从 debug 切到正式包：手动装一次 `dist/lumenbook-0.6.13-arm64-v8a.apk`（包名 `com.lumenbook.reader`），之后才能靠应用内更新。
 3. MOBI/AZW3 真实样书暂不追（用户明确说不做），自造 MOBI6 样书已确认解析链路与目录。
 4. 阶段 8 剩下：PDF 目录（需要换 PDF 解析库）、按标签/系列分组、阅读页页码（foliate 只给百分比）。
 

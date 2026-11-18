@@ -389,12 +389,36 @@ function goToFraction(frac) {
   view.goToFraction(frac).catch((e) => console.error('goToFraction', e))
 }
 
+// 翻页排队：foliate 在动画期间会忽略新的 next()/prev()，连点就会丢。
+// 这里把翻页串起来，动画没结束时只记一个待办，结束后立刻补上 —— 点几下就翻几页。
+let flipBusy = false
+let flipPending = 0
+async function flip(dir) {
+  if (flipBusy) { flipPending = dir; return }
+  flipBusy = true
+  try {
+    if (dir > 0) await view.next()
+    else await view.prev()
+  } catch (e) {
+    /* 到书头书尾会 reject，忽略 */
+  } finally {
+    flipBusy = false
+  }
+  if (flipPending) {
+    const d = flipPending
+    flipPending = 0
+    setTimeout(() => flip(d), 20)
+  }
+}
+
 function next() {
-  view.next().catch(() => {})
+  globalThis.__lumenTapFlipAt = Date.now()
+  flip(1)
 }
 
 function prev() {
-  view.prev().catch(() => {})
+  globalThis.__lumenTapFlipAt = Date.now()
+  flip(-1)
 }
 
 /** 跳到书签（CFI）。书签存的是点击那一刻的 CFI，回来时按它定位。 */
@@ -474,7 +498,21 @@ function attachDocGestures(doc) {
       return
     }
     if (dt > 600) return
-    tapZone(x / w)
+    // 正文 iframe 有两种情形：
+    //  1) 普通书：iframe 宽度 = 屏幕宽度，clientX 直接就是屏幕坐标；
+    //  2) 单文档超长书（中国2185 这种）：整个正文排成一条 10 万像素的横向长带，
+    //     iframe 跟着变得很宽、由外层容器横向滚动 —— 这时 clientX 是「长带里的坐标」，
+    //     除以 innerWidth 会永远落在左侧区，表现为「点右边反而往前翻」。
+    // 用 frameElement 的屏幕矩形把坐标换算回屏幕坐标。
+    const frame = win.frameElement
+    let screenX = x
+    let viewW = window.innerWidth || 360
+    if (frame && frame.getBoundingClientRect) {
+      const r = frame.getBoundingClientRect()
+      const scale = r.width && win.innerWidth ? r.width / win.innerWidth : 1
+      screenX = r.left + x * scale
+    }
+    tapZone(screenX / viewW)
   }
   // 触屏用 touch 事件（WebView 里 pointer 系列在 iframe 内可能收不到），桌面用 pointer
   win.addEventListener('touchstart', (e) => {
