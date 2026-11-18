@@ -504,6 +504,21 @@ SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用�
 中央点击出「11 / 2341」与 ☰；菜单四项正常；左上书名→返回箭头→回到书库；
 设置页四列 + 圆角 + 隐藏作者后书库立即变 4 列。
 
+## 阶段 8：护眼绿/灰蓝跟随系统深色模式（0.6.16）
+
+用户问：「护眼绿 这个颜色能不能做相应的跟随系统深色模式的适配」。
+
+- `ui/theme/LumenColors.kt` 新增 `GreenDarkLumenColors`（page `0xFF1A211A`、字 `0xFFDDE6D8`、accent `0xFF7FA86A`）与
+  `BlueDarkLumenColors`（page `0xFF171D23`、字 `0xFFDCE3EA`、accent `0xFF77A3C7`）。
+- `lumenColorsFor(theme, systemDark)`：GREEN / BLUE 在 `systemDark` 时返回深色版；米纸、白纸保持纸感不变，
+  墨黑、纯黑本来就是深色，「跟随系统」照旧完全跟随。
+- 设置页 `ThemeSwatch` 与阅读页主题面板的小圆点改用 `lumenColorsFor(theme, isSystemInDarkTheme()).page`，
+  深色模式下圆点直接显示深色纸。
+
+实测（Android 16 模拟器，`adb shell cmd uimode night yes/no`）：主题选「护眼绿」时，
+浅色模式是亮绿纸 `#E7EFDD`，切到深色模式整页变墨绿（书库、设置、正文一起变），切回浅色又恢复；
+两种模式来回切都停在第 4 页，阅读位置不丢。
+
 ## 下一步
 
 1. 用户验收 0.6.15：外观设置（纸色/字体/排版/书库外观）+ 阅读页信息层与菜单按钮。
