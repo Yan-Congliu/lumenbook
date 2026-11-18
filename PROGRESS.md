@@ -266,6 +266,10 @@ CBZ / FB2 验证            scripts/make_test_misc.py 自造样书，桌面全�
 - PDF 目录做不了：`PdfRenderer` 不暴露 outline/bookmark 树，要做得引 PDFium 或另写 PDF 解析，先记着。
 - **0.6.5**：漫画封面 —— CBZ 没有元数据，封面取包内按文件名排序最靠前的图片（>6MB 放弃），
   `BookImporter.sniffCbz()`；单测 `CbzCoverTest`（4 个用例，含损坏包不抛异常）。
+- **0.6.6（PDF 修好）**：真机「PDF 无法渲染」的根因是 `Bitmap.Config.RGB_565` —— **PdfRenderer 只接受
+  ARGB_8888**，给 RGB_565 会抛异常，而旧代码 `catch { null }` 把异常吞了，界面永远停在「正在渲染…」。
+  现在改成 ARGB_8888，并且失败时把 `openPage 失败 / render 失败：异常类名 + message` 画在页面上 + 一个「重试」按钮，
+  打开失败也会显示原因。**教训：凡是 catch 完就返回 null 的渲染路径，真机上等于「永远转圈」，一定要把原因给出来。**
 
 ## 下一步
 
