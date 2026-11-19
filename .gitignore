@@ -27,3 +27,6 @@ __pycache__/
 # 测试书/样书不进仓库
 *.epub
 !app/src/main/assets/**
+
+# 测试用输出书（不入库）
+out-宋体版/
