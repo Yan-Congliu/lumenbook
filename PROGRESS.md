@@ -601,6 +601,27 @@ SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用�
 带窗口启动会崩在 `Failed to load opengl32sw`，必须 `-no-window -gpu swiftshader_indirect` 才能起来，
 起来后 `adb shell wm size 1080x2400` 把分辨率拉回正常手机尺寸。
 
+## 阶段 8：应用图标（0.6.21）
+
+在此之前 APK 里**根本没有图标资源**（`res/` 只有 `values/` 和 `xml/file_paths.xml`，Manifest 也没有 `android:icon`），
+装到桌面上是系统默认那个灰机器人。用户的诉求（m08651）：设计一个图标，用 App 的品牌米纸色 + 暖棕。
+
+- 设计：三本书立在书架上（棕皮 / **整条鎏金** / 墨皮），书脊上下用鎏金压条收边，底板米纸色 `#F7F4EF`，几粒金粉。
+  鎏金是代码算出来的金属渐变：`GOLD_STOPS` 七段色阶 + `sin(rows*0.6)` 细横纹 + `normal(0,1.2)` 噪点 +
+  斜向高斯高光带，比平涂金色更像磨光金箔。
+- 生成器：`scripts/make_icon.py`（可重复执行，`--out` 指 `res` 目录）。要点：
+  - 先在 1024 设计稿上画（4× 超采样再 LANCZOS 缩），`place()` 里 **先 `art.getbbox()` 裁切再等比缩放** ——
+    不裁切时图形只占画布 30%，会显得很小。
+  - 自适应前景：108dp 画布，图形占 `fg_fraction = 0.78`；传统图标 `legacy_fraction = 0.84`。
+  - 5 档密度 mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi 各出 `ic_launcher.png`、`ic_launcher_round.png`、
+    `ic_launcher_foreground.png`、`ic_launcher_monochrome.png`。
+- 资源与清单：`res/mipmap-anydpi-v26/ic_launcher.xml` + `ic_launcher_round.xml`（adaptive-icon，含 `<monochrome>`）、
+  `res/values/colors.xml` 里的 `ic_launcher_background`、Manifest 的 `android:icon` / `android:roundIcon`。
+- 验证：debug 包装进 emulator-5554，桌面 dock 与应用抽屉都显示新图标（`dist/icon-home.png`、`dist/icon-drawer.png`），
+  本地遮罩预览 `dist/icon-adaptive-preview.png` 圆/圆角/方形三种裁切都正常。
+- 教训：图标这类「看得见」的东西，最终一定要在真机/模拟器的桌面上看一眼 —— 画布里 1024px 很漂亮，
+  缩小到 48dp 可能糊成一根金条。
+
 ## 下一步
 
 1. 用户验收 0.6.15：外观设置（纸色/字体/排版/书库外观）+ 阅读页信息层与菜单按钮。
