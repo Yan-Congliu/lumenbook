@@ -149,22 +149,45 @@ class Art:
 
 
 def build_art(mono=False, with_shadow=True, sparkle=True):
+    """平面三书脊（用户选定的 C 稿）：棕 / 棕亮 / 墨，书脊上下一道细线，地上一点软影。"""
     a = Art()
-    if with_shadow and not mono:
-        a.shadow(268, 790, 806)
     specs = [
-        (272, 366, 128, 440, BROWN_DARK),
-        (456, 252, 156, 554, BROWN),
-        (656, 396, 122, 410, INK),
+        (300, 280, 112, 540, BROWN_DARK),
+        (446, 220, 140, 600, BROWN),
+        (620, 300, 118, 520, INK),
     ]
-    for i, (x, y, w, h, color) in enumerate(specs):
-        a.spine(x, y, w, h, color, "full" if i == 1 else "caps", mono=mono)
-    if sparkle and not mono:
-        a.sparkle(720, 300, 30)
-        a.sparkle(830, 366, 16, 200)
-        a.sparkle(246, 330, 14, 190)
-    return a.img
+    if with_shadow and not mono:
+        sh = Image.new("L", (a.S, a.S), 0)
+        ImageDraw.Draw(sh).ellipse(
+            [a.px(300), a.px(806), a.px(742), a.px(866)], fill=70
+        )
+        sh = sh.filter(ImageFilter.GaussianBlur(a.px(11)))
+        tint = Image.new("RGBA", (a.S, a.S), SHADOW + (255,))
+        a.img.paste(tint, (0, 0), sh)
+        a.d = ImageDraw.Draw(a.img)
 
+    for x, y, w, h, color in specs:
+        if mono:
+            a.d.rounded_rectangle(
+                [a.px(x), a.px(y), a.px(x + w), a.px(y + h)],
+                radius=a.px(22), fill=(255, 255, 255, 255),
+            )
+            continue
+        a.d.rounded_rectangle(
+            [a.px(x), a.px(y), a.px(x + w), a.px(y + h)],
+            radius=a.px(22), fill=color + (255,),
+        )
+        # 书脊上端的细金线
+        a.d.rounded_rectangle(
+            [a.px(x + 18), a.px(y + 34), a.px(x + w - 18), a.px(y + 44)],
+            radius=a.px(3), fill=(198, 160, 74, 255),
+        )
+        # 下端的浅色压线
+        a.d.rounded_rectangle(
+            [a.px(x + 18), a.px(y + h - 64), a.px(x + w - 18), a.px(y + h - 55)],
+            radius=a.px(3), fill=(240, 235, 226, 255),
+        )
+    return a.img
 
 def place(art, canvas_px, art_fraction):
     """把 1024 设计稿等比缩放后居中放进 canvas_px 的画布。"""
