@@ -252,7 +252,7 @@ fun SettingsScreen(
         }
 
         Text(
-            text = "鎏书 LumenBook · 本地离线阅读，数据只存在这台手机上",
+            text = "鎏书 · 本地离线阅读，数据只存在这台手机上",
             fontSize = 11.sp,
             color = colors.textTertiary,
             modifier = Modifier.padding(22.dp),

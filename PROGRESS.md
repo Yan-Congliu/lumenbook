@@ -636,6 +636,22 @@ SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用�
   （`dist/icon-home-flat.png`、`dist/icon-drawer-flat.png`、近景 `dist/icon-zoom-flat.png`），本地遮罩预览 `dist/icon-flat-preview.png`。
 - 教训：图标这类东西，用户要的是「能一眼认出来的简单形状」，金属渐变在 48dp 上会糊成一根金条 —— 扁平更适合小尺寸。
 
+## 阶段 8：应用名称改成「鎏书」（0.6.23）
+
+用户（m08927）：「现在微调一下应用名称，去掉lumenbook，只保留"鎏书"，但是项目名称不变，
+所有英文场合仍然使用lumenbook。鎏书用于应用名称和中文场合」。
+
+- `app/src/main/res/values/strings.xml`：`app_name` 从 `鎏书 LumenBook` 改为 `鎏书`。
+- 新增 `app/src/main/res/values-en/strings.xml`：`app_name = LumenBook`（英文系统上仍显示项目名）。
+- `ui/settings/SettingsScreen.kt` 页脚：`鎏书 LumenBook · 本地离线阅读…` → `鎏书 · 本地离线阅读…`。
+  仓库地址那一行（`github.com/Yan-Congliu/lumenbook`）属于英文场合，保持不动。
+- 不受影响、仍然是 lumenbook 的地方：包名 `com.lumenbook.reader`、`Theme.LumenBook`、
+  `lumenbook.db`、APK 文件名、`User-Agent: LumenBook-Android`、更新仓库地址。
+- 验证（emulator-5554，把系统语言改成 zh-CN 后 reboot）：应用抽屉里显示「鎏书」（不再截断成「鎏书 Lume…」），
+  设置页「关于」显示 `0.6.23 (39)`、页脚「鎏书 · 本地离线阅读」；`aapt2 dump badging` 的
+  `application-label:'鎏书'`。英文环境（改回默认 en-US 时）显示 `LumenBook`。
+- 切语言的办法：`adb -s emulator-5554 root` → `setprop persist.sys.locale zh-CN` → `adb reboot`。
+
 ## 下一步
 
 1. 用户验收 0.6.15：外观设置（纸色/字体/排版/书库外观）+ 阅读页信息层与菜单按钮。
