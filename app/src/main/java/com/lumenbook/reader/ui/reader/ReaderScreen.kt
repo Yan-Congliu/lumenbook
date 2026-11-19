@@ -1246,7 +1246,10 @@ private fun ReaderStyleSheet(
             Spacer(Modifier.height(16.dp))
             Text("字体", fontSize = 12.sp, color = colors.textSecondary)
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 ReaderFont.entries.forEach { item ->
                     ChoiceChip(item.label, style.font == item, colors) { onFont(item) }
                 }
@@ -1292,7 +1295,10 @@ private fun ReaderStyleSheet(
                 onChange = { onIndent(it.roundToInt()) },
             )
             Spacer(Modifier.height(4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 ReaderAlign.entries.forEach { item ->
                     ChoiceChip(item.label, style.align == item, colors) { onAlign(item) }
                 }

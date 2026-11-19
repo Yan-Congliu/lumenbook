@@ -9,6 +9,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -527,20 +529,25 @@ fun SegmentedControl(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalLumenColors.current
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(11.dp))
-            .background(colors.surfaceMuted)
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        options.forEachIndexed { index, label ->
-            val active = index == selected
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(9.dp))
+    // 选项少的时候均分宽度（原型里的胶囊分段控件）；选项一多就横向可滑，
+    // 否则每格会被压得放不下文字 —— 以后加「系列」「标签」这类分页也不会挤。
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val perItem = maxWidth / options.size.coerceAtLeast(1)
+        val scrollable = perItem < 92.dp
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(11.dp))
+                .background(colors.surfaceMuted)
+                .then(if (scrollable) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            options.forEachIndexed { index, label ->
+                val active = index == selected
+                Box(
+                    modifier = (if (scrollable) Modifier.width(92.dp) else Modifier.weight(1f))
+                        .clip(RoundedCornerShape(9.dp))
                     .background(if (active) colors.surface else Color.Transparent)
                     .combinedClickable(onClick = { onSelect(index) }, onLongClick = null)
                     .padding(vertical = 8.dp),
@@ -549,9 +556,12 @@ fun SegmentedControl(
                 Text(
                     text = label,
                     fontSize = 13.sp,
+                    maxLines = 1,
+                    softWrap = false,
                     color = if (active) colors.text else colors.textSecondary,
                     fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
                 )
+                }
             }
         }
     }

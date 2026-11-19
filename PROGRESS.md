@@ -583,6 +583,24 @@ SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用�
 搜索链路的端到端验证在桌面 `reader_smoke.py` 的页面上做（模拟器 adb 没法可靠地给 Compose 输入框聚焦打字）：
 `window.lumen.search('雪')` → 5 条命中，excerpt 形如「第一章 【雪】落」，chapter 为「第一章 雪落」。
 
+## 阶段 8：字体选项横滑 + 同类问题排查（0.6.20）
+
+用户：「打开书后主题与字体里面字体也有同样的问题，也改成滑动的，以便于未来加载更多字体。再检查一下其他地方有没有这种问题，都改一下」。
+
+- `ui/reader/ReaderScreen.kt`：`ReaderStyleSheet` 里字体 chips 行、对齐 chips 行都改成
+  `Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = spacedBy(8.dp))`。
+- `ui/library/LibraryScreen.kt` 的 `SegmentedControl`：用 `BoxWithConstraints` 算每格宽度，
+  `perItem < 92.dp` 时切成横向可滑 + 每格固定 92dp，否则维持原来的 `weight(1f)` 均分；文字 `maxLines = 1`、`softWrap = false`。
+  这样以后书库分页加选项也不会挤。
+- `ui/imports/ImportScreen.kt`：`QuickRow` 的标签加 `overflow = TextOverflow.Ellipsis`。
+
+实测（Android 16 模拟器 1080x1920，0.6.20 debug）：字体行五个 chip 一行排开（宋体/黑体/楷体/仿宋/等宽），
+书库三档分页仍是均分整行、外观无变化。
+
+踩坑：模拟器隔夜关机后 AVD 也没了，重新 `avdmanager create avd -n lumen -k "system-images;android-36;google_apis;x86_64"`；
+带窗口启动会崩在 `Failed to load opengl32sw`，必须 `-no-window -gpu swiftshader_indirect` 才能起来，
+起来后 `adb shell wm size 1080x2400` 把分辨率拉回正常手机尺寸。
+
 ## 下一步
 
 1. 用户验收 0.6.15：外观设置（纸色/字体/排版/书库外观）+ 阅读页信息层与菜单按钮。

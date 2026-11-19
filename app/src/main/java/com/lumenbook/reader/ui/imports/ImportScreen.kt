@@ -364,7 +364,7 @@ private fun QuickRow(items: List<Pair<String, String>>, onPick: (String) -> Unit
                     .border(1.dp, colors.separator, RoundedCornerShape(20.dp)),
                 shape = RoundedCornerShape(20.dp),
             ) {
-                Text(label, fontSize = 13.sp, color = colors.textSecondary, maxLines = 1)
+                Text(label, fontSize = 13.sp, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
