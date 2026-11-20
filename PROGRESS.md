@@ -652,6 +652,28 @@ SAF 里也选不了 —— 只能让用户先在 QQ/微信里「用其他应用�
   `application-label:'鎏书'`。英文环境（改回默认 en-US 时）显示 `LumenBook`。
 - 切语言的办法：`adb -s emulator-5554 root` → `setprop persist.sys.locale zh-CN` → `adb reboot`。
 
+## 阶段 8：全局圆角改成 G2 曲率连续（0.6.24）
+
+用户：所有「直线直接接圆弧」的地方太生硬，要改成直线经 G2 过渡到圆弧。
+
+- 新增 `app/src/main/java/com/lumenbook/reader/ui/theme/SmoothShape.kt`：
+  - `SmoothCornerShape`（继承 `CornerBasedShape`，四角可不同，RTL 交换）、`SmoothRoundedCornerShape(radius)`、
+    `SmoothSheetShape`（上 28dp 的底部弹层）、`SmoothPillShape`（短边一半的胶囊）。
+  - 每个角 = 直边 → 两段三次贝塞尔 → 直边：第一段控制点 C1、C2 都落在入边直线上 ⇒ 起点曲率严格 0（G2）；
+    第二段是第一段关于「O→M 对角轴」（方向 `(nA+nB)/√2`）的镜像 ⇒ 45° 点切线/曲率都连续；曲率峰值 ≈ 1.29/r。
+  - 参数：`SMOOTHING = 0.62f`（起弯沿直边外延 0.62r）、`EDGE_CONTROL_RATIO = 0.55f`；路径按 `w|h|四角半径` 做 32 条 LRU 缓存。
+  - 半径夹到短边一半；两角半径之和超边长时整体缩放；起弯空间不足（胶囊短边方向）时该角退回普通圆弧。
+- `ui/theme/Theme.kt` 配 `Shapes`（4/8/12/16/28dp 全部用 Smooth 版），Material3 的 Card / AlertDialog 等跟着变。
+- 替换范围：`ui/imports/ImportScreen.kt`、`ui/library/BookCover.kt`、`ui/library/LibraryScreen.kt`、`ui/reader/ReaderScreen.kt`、
+  `ui/settings/SettingsScreen.kt`、`ui/stats/StatsScreen.kt`（`RoundedCornerShape(x)` → `SmoothRoundedCornerShape(x)`、
+  `RoundedCornerShape(50)` → `SmoothPillShape()`）；6 处 `ModalBottomSheet` 显式传 `shape = SmoothSheetShape`
+  （`LibraryScreen.kt:275`、`PdfReaderScreen.kt:292`、`ReaderScreen.kt:792/1030/1067/1180`）。
+- 单测 `app/src/test/java/com/lumenbook/reader/ui/theme/SmoothShapeTest.kt`（7 个）：接缝曲率 = 0、对角处曲率连续、
+  爬升段单调、峰值 ≈ 1.29/r、采样点不越界、左右对称、退化半径（0 / 超短边一半）不出 NaN。全套 30 个单测通过。
+- 踩坑：`SmoothRoundedCornerShape(radius: Dp)` 原先写成 `SmoothCornerShape(radius)`，Kotlin 重载解析挑中了
+  `(topStart: Dp = 0.dp, topEnd: Dp = 0.dp, ...)` 那个构造，结果只有左上角有半径 —— 表现为「卡片四角只有一角是圆的、
+  按钮右侧出血」。修法：工厂显式传 `SmoothCornerShape(CornerSize(radius))`。教训：带默认值的 Dp 构造很容易被误选。
+
 ## 下一步
 
 1. 用户验收 0.6.15：外观设置（纸色/字体/排版/书库外观）+ 阅读页信息层与菜单按钮。

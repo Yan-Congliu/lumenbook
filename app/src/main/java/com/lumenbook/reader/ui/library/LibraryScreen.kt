@@ -29,7 +29,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -75,6 +74,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumenbook.reader.ui.theme.SmoothSheetShape
+import com.lumenbook.reader.ui.theme.SmoothRoundedCornerShape
+import com.lumenbook.reader.ui.theme.SmoothPillShape
 import com.lumenbook.reader.data.Book
 import com.lumenbook.reader.data.BookFormat
 import com.lumenbook.reader.data.LibraryStyle
@@ -270,6 +272,7 @@ fun LibraryScreen(
 
     sheetBook?.let { book ->
         ModalBottomSheet(
+        shape = SmoothSheetShape,
             onDismissRequest = { sheetBook = null },
             sheetState = rememberModalBottomSheetState(),
             containerColor = colors.surface,
@@ -331,7 +334,7 @@ private fun EmptyLibrary(onImport: () -> Unit) {
         Spacer(Modifier.height(20.dp))
         Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(50))
+                .clip(SmoothPillShape())
                 .background(colors.accent)
                 .combinedClickable(onClick = onImport, onLongClick = null)
                 .padding(horizontal = 22.dp, vertical = 11.dp),
@@ -425,7 +428,7 @@ private fun EditBookDialog(
                         modifier = Modifier
                             .width(48.dp)
                             .aspectRatio(2f / 3f)
-                            .clip(RoundedCornerShape(6.dp)),
+                            .clip(SmoothRoundedCornerShape(6.dp)),
                     ) {
                         if (preview != null) {
                             Image(
@@ -537,7 +540,7 @@ fun SegmentedControl(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(11.dp))
+                .clip(SmoothRoundedCornerShape(11.dp))
                 .background(colors.surfaceMuted)
                 .then(if (scrollable) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
                 .padding(3.dp),
@@ -547,7 +550,7 @@ fun SegmentedControl(
                 val active = index == selected
                 Box(
                     modifier = (if (scrollable) Modifier.width(92.dp) else Modifier.weight(1f))
-                        .clip(RoundedCornerShape(9.dp))
+                        .clip(SmoothRoundedCornerShape(9.dp))
                     .background(if (active) colors.surface else Color.Transparent)
                     .combinedClickable(onClick = { onSelect(index) }, onLongClick = null)
                     .padding(vertical = 8.dp),

@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
+import com.lumenbook.reader.ui.theme.SmoothSheetShape
 import com.lumenbook.reader.data.AppContainer
 import com.lumenbook.reader.data.Book
 import com.lumenbook.reader.data.Bookmark
@@ -288,6 +289,7 @@ fun PdfReaderScreen(
 
     if (showBookmarks) {
         ModalBottomSheet(
+        shape = SmoothSheetShape,
             onDismissRequest = { showBookmarks = false },
             containerColor = colors.surface,
         ) {

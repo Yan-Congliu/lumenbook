@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -48,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumenbook.reader.ui.theme.SmoothRoundedCornerShape
 import com.lumenbook.reader.data.AppContainer
 import com.lumenbook.reader.importer.ImportScanner
 import com.lumenbook.reader.ui.theme.LocalLumenColors
@@ -240,7 +240,7 @@ fun ImportScreen(container: AppContainer, onClose: () -> Unit) {
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 12.dp)
                         .height(46.dp),
-                    shape = RoundedCornerShape(23.dp),
+                    shape = SmoothRoundedCornerShape(23.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = colors.accent),
                 ) {
                     if (importing) {
@@ -302,7 +302,7 @@ private fun EmptyImportHint(
         Button(
             onClick = onPickFolder,
             modifier = Modifier.fillMaxWidth().height(46.dp),
-            shape = RoundedCornerShape(23.dp),
+            shape = SmoothRoundedCornerShape(23.dp),
             colors = ButtonDefaults.buttonColors(containerColor = colors.accent),
         ) {
             Text("选择文件夹", fontSize = 15.sp)
@@ -311,7 +311,7 @@ private fun EmptyImportHint(
         OutlinedButton(
             onClick = onPickFiles,
             modifier = Modifier.fillMaxWidth().height(46.dp),
-            shape = RoundedCornerShape(23.dp),
+            shape = SmoothRoundedCornerShape(23.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textSecondary),
         ) {
             Text("只选几个文件", fontSize = 14.sp)
@@ -361,8 +361,8 @@ private fun QuickRow(items: List<Pair<String, String>>, onPick: (String) -> Unit
                 modifier = Modifier
                     .weight(1f)
                     .height(40.dp)
-                    .border(1.dp, colors.separator, RoundedCornerShape(20.dp)),
-                shape = RoundedCornerShape(20.dp),
+                    .border(1.dp, colors.separator, SmoothRoundedCornerShape(20.dp)),
+                shape = SmoothRoundedCornerShape(20.dp),
             ) {
                 Text(label, fontSize = 13.sp, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }

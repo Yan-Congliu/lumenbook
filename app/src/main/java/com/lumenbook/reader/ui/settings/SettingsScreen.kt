@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -47,6 +46,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumenbook.reader.ui.theme.SmoothRoundedCornerShape
+import com.lumenbook.reader.ui.theme.SmoothPillShape
 import com.lumenbook.reader.BuildConfig
 import com.lumenbook.reader.data.ApkInstaller
 import com.lumenbook.reader.data.LibraryStyle
@@ -276,12 +277,12 @@ private fun ThemeSwatch(theme: ReaderTheme, selected: Boolean, onClick: () -> Un
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .clip(RoundedCornerShape(50))
+                .clip(SmoothPillShape())
                 .background(resolved.page)
                 .border(
                     width = if (selected) 2.dp else 1.dp,
                     color = if (selected) colors.accent else colors.separator,
-                    shape = RoundedCornerShape(50),
+                    shape = SmoothPillShape(),
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -311,7 +312,7 @@ private fun SegButton(label: String, selected: Boolean, onClick: () -> Unit) {
     val colors = LocalLumenColors.current
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(50))
+            .clip(SmoothPillShape())
             .background(if (selected) colors.accent else colors.surfaceMuted)
             .combinedClickable(onClick = onClick, onLongClick = null)
             .padding(horizontal = 14.dp, vertical = 6.dp),
@@ -370,7 +371,7 @@ private fun Card(content: @Composable () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(SmoothRoundedCornerShape(12.dp))
             .background(colors.surface),
     ) {
         content()
@@ -418,7 +419,7 @@ private fun ChoiceRow(
         Box(
             modifier = Modifier
                 .size(18.dp)
-                .clip(RoundedCornerShape(50))
+                .clip(SmoothPillShape())
                 .background(if (selected) colors.accent else Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {

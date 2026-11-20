@@ -9,6 +9,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
+import com.lumenbook.reader.ui.theme.SmoothSheetShape
+import com.lumenbook.reader.ui.theme.SmoothRoundedCornerShape
+import com.lumenbook.reader.ui.theme.SmoothPillShape
 import com.lumenbook.reader.data.ReaderAlign
 import com.lumenbook.reader.data.ReaderFont
 import com.lumenbook.reader.data.ReaderTheme
@@ -30,7 +33,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -787,6 +789,7 @@ fun ReaderScreen(
 
     if (showToc) {
         ModalBottomSheet(
+        shape = SmoothSheetShape,
             onDismissRequest = { showToc = false },
             containerColor = colors.surface,
         ) {
@@ -951,7 +954,7 @@ private fun ReaderMetaLayer(
                     Box(
                         modifier = Modifier
                             .size(30.dp)
-                            .clip(RoundedCornerShape(50))
+                            .clip(SmoothPillShape())
                             .clickable(onClick = onBack),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -990,7 +993,7 @@ private fun ReaderMetaLayer(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .size(30.dp)
-                        .clip(RoundedCornerShape(50))
+                        .clip(SmoothPillShape())
                         .clickable(onClick = onBookmark),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1024,7 +1027,7 @@ private fun ReaderMenuSheet(
     onStyle: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.surface) {
+    ModalBottomSheet(shape = SmoothSheetShape, onDismissRequest = onDismiss, containerColor = colors.surface) {
         Column(Modifier.padding(bottom = 18.dp)) {
             if (hasToc) {
                 MenuRow("目录", colors = colors, onClick = onToc)
@@ -1061,7 +1064,7 @@ private fun ReaderSearchSheet(
         val q = text.trim()
         if (q.isNotEmpty()) onQuery(q)
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.surface) {
+    ModalBottomSheet(shape = SmoothSheetShape, onDismissRequest = onDismiss, containerColor = colors.surface) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -1076,7 +1079,7 @@ private fun ReaderSearchSheet(
                 placeholder = { Text("输入关键词", color = colors.textTertiary, fontSize = 14.sp) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape = SmoothRoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = colors.text,
                     unfocusedTextColor = colors.text,
@@ -1174,7 +1177,7 @@ private fun ReaderStyleSheet(
     onMargin: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.surface) {
+    ModalBottomSheet(shape = SmoothSheetShape, onDismissRequest = onDismiss, containerColor = colors.surface) {
         Column(
             Modifier
                 .padding(horizontal = 24.dp)
@@ -1206,12 +1209,12 @@ private fun ReaderStyleSheet(
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
-                                .clip(RoundedCornerShape(50))
+                                .clip(SmoothPillShape())
                                 .background(lumenColorsFor(item, isSystemInDarkTheme()).page)
                                 .border(
                                     width = if (theme == item) 2.dp else 1.dp,
                                     color = if (theme == item) colors.accent else colors.separator,
-                                    shape = RoundedCornerShape(50),
+                                    shape = SmoothPillShape(),
                                 )
                                 .clickable { onTheme(item) },
                             contentAlignment = Alignment.Center,
@@ -1311,7 +1314,7 @@ private fun ReaderStyleSheet(
 private fun ChoiceChip(label: String, selected: Boolean, colors: LumenColors, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(50))
+            .clip(SmoothPillShape())
             .background(if (selected) colors.accent else colors.surfaceMuted)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 7.dp),

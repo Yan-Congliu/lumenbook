@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
@@ -31,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumenbook.reader.ui.theme.SmoothRoundedCornerShape
+import com.lumenbook.reader.ui.theme.SmoothPillShape
 import com.lumenbook.reader.data.Book
 import com.lumenbook.reader.ui.theme.coverPaletteFor
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +45,7 @@ fun BookCover(
     modifier: Modifier = Modifier,
     corner: androidx.compose.ui.unit.Dp = 7.dp,
 ) {
-    val shape = RoundedCornerShape(corner)
+    val shape = SmoothRoundedCornerShape(corner)
     val (c1, c2) = coverPaletteFor(book.title)
     val bitmap by produceState<ImageBitmap?>(initialValue = book.coverPath?.let { CoverCache.get(it) }, book.coverPath) {
         if (value != null) return@produceState
@@ -116,7 +117,7 @@ fun BookCover(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(6.dp)
-                    .clip(RoundedCornerShape(50))
+                    .clip(SmoothPillShape())
                     .background(Color(0xFFF2ECE1))
                     .padding(2.dp),
             ) {
